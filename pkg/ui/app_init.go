@@ -3,6 +3,9 @@ package ui
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/agent"
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/api"
@@ -94,11 +97,7 @@ func InitApp(tviewApp *tview.Application, cfg *config.Config, aiClient *ai.Clien
 		a.LogViewer.Stop()
 	})
 
-	a.YamlViewer = NewYamlViewer(a.Application, k8sClient, func() {
-		a.Pages.SwitchToPage("main")
-	})
-
-	a.DescribeViewer = NewDescribeViewer(a.Application, k8sClient, func() {
+	a.ResourceViewer = NewResourceViewer(a.Application, k8sClient, func() {
 		a.Pages.SwitchToPage("main")
 	})
 
@@ -145,8 +144,20 @@ func InitApp(tviewApp *tview.Application, cfg *config.Config, aiClient *ai.Clien
 	a.HeaderContainer = tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(a.Header, 3, 0, false)
 
+	a.initSignals()
 	a.initCallbacks(ag)
 	a.initPages()
 
 	return a
+}
+
+func (a *App) initSignals() {
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+
+	go func() {
+		<-sig
+		a.Application.Stop()
+		os.Exit(0)
+	}()
 }

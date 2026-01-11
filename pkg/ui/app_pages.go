@@ -44,7 +44,7 @@ func (a *App) initPages() {
 	a.DashboardWidth = 60
 	a.AssistantWidth = 40
 
-	mainContent := tview.NewFlex().
+	a.MainContent = tview.NewFlex().
 		AddItem(a.Dashboard.Root, 0, a.DashboardWidth, true).
 		AddItem(a.Assistant.Root, 0, a.AssistantWidth, false)
 
@@ -72,7 +72,7 @@ func (a *App) initPages() {
 
 	a.Root = tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(a.HeaderContainer, 3, 0, false).
-		AddItem(mainContent, 0, 1, true).
+		AddItem(a.MainContent, 0, 1, true).
 		AddItem(a.ShortcutBar, 1, 0, false).
 		AddItem(a.CommandBar.Input, 1, 0, false)
 
@@ -97,19 +97,22 @@ func (a *App) initPages() {
 			return nil
 		}
 		if event.Key() == tcell.KeyTab {
-			if a.Dashboard.Root.HasFocus() {
-				a.Application.SetFocus(a.Assistant.Input)
-			} else {
-				a.Application.SetFocus(a.Dashboard.Root)
+			front, _ := a.Pages.GetFrontPage()
+			if front == "main" {
+				if a.Dashboard.Root.HasFocus() {
+					a.Application.SetFocus(a.Assistant.Input)
+				} else {
+					a.Application.SetFocus(a.Dashboard.Root)
+				}
+				return nil
 			}
-			return nil
 		}
 		if event.Key() == tcell.KeyCtrlH {
 			if a.DashboardWidth > 10 {
 				a.DashboardWidth -= 2
 				a.AssistantWidth += 2
-				mainContent.ResizeItem(a.Dashboard.Root, 0, a.DashboardWidth)
-				mainContent.ResizeItem(a.Assistant.Root, 0, a.AssistantWidth)
+				a.MainContent.ResizeItem(a.Dashboard.Root, 0, a.DashboardWidth)
+				a.MainContent.ResizeItem(a.Assistant.Root, 0, a.AssistantWidth)
 			}
 			return nil
 		}
@@ -117,8 +120,8 @@ func (a *App) initPages() {
 			if a.AssistantWidth > 10 {
 				a.DashboardWidth += 2
 				a.AssistantWidth -= 2
-				mainContent.ResizeItem(a.Dashboard.Root, 0, a.DashboardWidth)
-				mainContent.ResizeItem(a.Assistant.Root, 0, a.AssistantWidth)
+				a.MainContent.ResizeItem(a.Dashboard.Root, 0, a.DashboardWidth)
+				a.MainContent.ResizeItem(a.Assistant.Root, 0, a.AssistantWidth)
 			}
 			return nil
 		}
@@ -126,6 +129,11 @@ func (a *App) initPages() {
 			// If in a sub-page, return to main
 			front, _ := a.Pages.GetFrontPage()
 			if front != "main" {
+				if front == "resource_viewer" {
+					a.Pages.SwitchToPage("main")
+					a.Application.SetFocus(a.Dashboard.Root)
+					return nil
+				}
 				a.Pages.SwitchToPage("main")
 				a.Application.SetFocus(a.Dashboard.Root)
 				return nil
@@ -133,6 +141,32 @@ func (a *App) initPages() {
 		}
 
 		return event
+	})
+
+	// Handle Resize
+	var lastWidth int
+	a.Application.SetBeforeDrawFunc(func(screen tcell.Screen) bool {
+		w, _ := screen.Size()
+		a.ScreenWidth = w
+		if w != lastWidth {
+			lastWidth = w
+			a.Application.QueueUpdateDraw(func() {
+				if w < 100 {
+					// Prioritize Dashboard on narrow screens
+					a.DashboardWidth = 100
+					a.AssistantWidth = 0
+					a.MainContent.ResizeItem(a.Dashboard.Root, 0, 1)
+					a.MainContent.ResizeItem(a.Assistant.Root, 0, 0)
+				} else {
+					// Default split
+					a.DashboardWidth = 60
+					a.AssistantWidth = 40
+					a.MainContent.ResizeItem(a.Dashboard.Root, 0, 6)
+					a.MainContent.ResizeItem(a.Assistant.Root, 0, 4)
+				}
+			})
+		}
+		return false
 	})
 }
 

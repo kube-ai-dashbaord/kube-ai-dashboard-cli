@@ -13,27 +13,31 @@ import (
 
 func (a *App) initCallbacks(ag *agent.Agent) {
 	a.Dashboard.OnYaml = func(ns, name string) {
-		a.YamlViewer.Show(a.Dashboard.CurrentResource, ns, name)
+		a.ResourceViewer.Show(a.Dashboard.CurrentResource, ns, name)
+		a.ResourceViewer.ActiveTab = TabYAML
+		a.ResourceViewer.refresh()
 		db.RecordAudit(db.AuditEntry{
 			User:     "User",
 			Action:   "YAML_VIEW",
 			Resource: a.Dashboard.CurrentResource,
 			Details:  fmt.Sprintf("%s/%s", ns, name),
 		})
-		a.Pages.AddPage("yaml", a.YamlViewer.View, true, true)
-		a.Pages.SwitchToPage("yaml")
+		a.Pages.AddPage("resource_viewer", a.ResourceViewer.Root, true, true)
+		a.Pages.SwitchToPage("resource_viewer")
 	}
 
 	a.Dashboard.OnDescribe = func(ns, name string) {
-		a.DescribeViewer.Show(a.Dashboard.CurrentResource, ns, name)
+		a.ResourceViewer.Show(a.Dashboard.CurrentResource, ns, name)
+		a.ResourceViewer.ActiveTab = TabDescribe
+		a.ResourceViewer.refresh()
 		db.RecordAudit(db.AuditEntry{
 			User:     "User",
 			Action:   "DESCRIBE_NATIVE",
 			Resource: a.Dashboard.CurrentResource,
 			Details:  fmt.Sprintf("%s/%s", ns, name),
 		})
-		a.Pages.AddPage("describe", a.DescribeViewer.View, true, true)
-		a.Pages.SwitchToPage("describe")
+		a.Pages.AddPage("resource_viewer", a.ResourceViewer.Root, true, true)
+		a.Pages.SwitchToPage("resource_viewer")
 	}
 
 	a.Dashboard.OnAnalyze = func(ns, name string) {

@@ -16,7 +16,7 @@ const Logo = `
     Kubernetes AI Dashboard (k13s)
 `
 
-func NewHeader(context, cluster, user, k8sVersion, namespace string, aiStatus string, nsMap string, resource string) *tview.Flex {
+func NewHeader(context, cluster, user, k8sVersion, namespace string, aiStatus string, nsMap string, resource string, w int) *tview.Flex {
 	infoTable := tview.NewTable().SetSelectable(false, false)
 	infoTable.SetBackgroundColor(tview.Styles.PrimitiveBackgroundColor)
 
@@ -52,11 +52,20 @@ func NewHeader(context, cluster, user, k8sVersion, namespace string, aiStatus st
 	breadcrumbText := fmt.Sprintf("[blue]%s [white]> [green]%s [white]> [yellow]%s", context, namespace, resource)
 	breadcrumb.SetText(breadcrumbText)
 
-	header := tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(tview.NewFlex().
-			AddItem(infoTable, 0, 1, false).
+	innerFlex := tview.NewFlex()
+	if w > 120 {
+		innerFlex.AddItem(infoTable, 0, 1, false).
 			AddItem(logoView, 0, 1, false).
-			AddItem(statusView, 0, 1, false), 0, 1, false).
+			AddItem(statusView, 0, 1, false)
+	} else if w > 80 {
+		innerFlex.AddItem(infoTable, 0, 2, false).
+			AddItem(statusView, 0, 1, false)
+	} else {
+		innerFlex.AddItem(infoTable, 0, 1, false)
+	}
+
+	header := tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(innerFlex, 0, 1, false).
 		AddItem(breadcrumb, 1, 0, false)
 
 	return header

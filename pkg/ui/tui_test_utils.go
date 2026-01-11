@@ -4,14 +4,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/agent"
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
 
 // TUITester wraps a tview application with a simulation screen for automated testing.
 type TUITester struct {
-	App    *tview.Application
-	Screen tcell.SimulationScreen
+	App       *tview.Application
+	Screen    tcell.SimulationScreen
+	Assistant *Assistant
 }
 
 // NewTUITester creates a new TUI tester.
@@ -20,10 +22,25 @@ func NewTUITester() (*TUITester, error) {
 	if err := screen.Init(); err != nil {
 		return nil, err
 	}
-	app := tview.NewApplication().SetScreen(screen)
+	tviewApp := tview.NewApplication().SetScreen(screen)
+	// We need mock dependencies for InitApp
+	app := &App{
+		Application: tviewApp,
+	}
+	// Note: In a real test we'd use InitApp with mock K8s/AI clients.
+	// For this TUI-only verification, we'll manually set up what we need or call a simplified Init.
+
+	// Create required components
+	app.Dashboard = NewDashboard(tviewApp, nil, nil, nil, nil)
+	app.Assistant = NewAssistant(tviewApp, &agent.Agent{Input: make(chan any, 10), Output: make(chan any, 10)}, nil)
+
+	// For testing assistant, we set it as the primary root
+	tviewApp.SetRoot(app.Assistant.Root, true)
+
 	return &TUITester{
-		App:    app,
-		Screen: screen,
+		App:       tviewApp,
+		Screen:    screen,
+		Assistant: app.Assistant,
 	}, nil
 }
 

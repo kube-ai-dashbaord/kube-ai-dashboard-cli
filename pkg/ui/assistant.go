@@ -57,6 +57,7 @@ func NewAssistant(app *tview.Application, ag *agent.Agent, reporter *ai.Reporter
 				if a.SelectedContext != "" {
 					query = fmt.Sprintf("[Context: %s] %s", a.SelectedContext, text)
 				}
+				Infof("User query sent to AI Agent: %s", query)
 				a.Agent.Input <- &api.UserInputResponse{Query: query}
 			}
 		}
@@ -139,6 +140,7 @@ func (a *Assistant) handleAgentMessage(msg any) {
 			case api.MessageTypeToolCallRequest:
 				desc := fmt.Sprintf("%v", m.Payload)
 				fmt.Fprintf(a.Chat, "\n[aqua]Action: [white]Running %s\n", desc)
+				Infof("AI Tool Call Request received: %s", desc)
 				db.RecordAudit(db.AuditEntry{
 					User:    "AI",
 					Action:  "TOOL_CALL",

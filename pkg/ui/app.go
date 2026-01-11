@@ -15,8 +15,7 @@ type App struct {
 	Dashboard       *Dashboard
 	Assistant       *Assistant
 	LogViewer       *LogViewer
-	YamlViewer      *YamlViewer
-	DescribeViewer  *DescribeViewer
+	ResourceViewer  *ResourceViewer
 	AuditViewer     *AuditViewer
 	Reporter        *ai.Reporter
 	Settings        *Settings
@@ -32,8 +31,10 @@ type App struct {
 	AIClient        *ai.Client
 	K8sClient       *k8s.Client
 	PulseViewer     *PulseViewer
+	ScreenWidth     int
 	DashboardWidth  int
 	AssistantWidth  int
+	MainContent     *tview.Flex
 	AgentManager    *agent.AgentManager
 }
 
@@ -66,5 +67,5 @@ func (a *App) CreateHeader() *tview.Flex {
 	}
 	nsMap := a.Dashboard.GetNamespaceMapping()
 	resource := a.Dashboard.CurrentResource
-	return NewHeader(ctxName, cluster, user, k8sVersion, ns, status, nsMap, resource)
+	return NewHeader(ctxName, cluster, user, k8sVersion, ns, status, nsMap, resource, a.ScreenWidth)
 }
