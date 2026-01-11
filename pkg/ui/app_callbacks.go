@@ -25,10 +25,22 @@ func (a *App) initCallbacks(ag *agent.Agent) {
 	}
 
 	a.Dashboard.OnDescribe = func(ns, name string) {
+		a.DescribeViewer.Show(a.Dashboard.CurrentResource, ns, name)
+		db.RecordAudit(db.AuditEntry{
+			User:     "User",
+			Action:   "DESCRIBE_NATIVE",
+			Resource: a.Dashboard.CurrentResource,
+			Details:  fmt.Sprintf("%s/%s", ns, name),
+		})
+		a.Pages.AddPage("describe", a.DescribeViewer.View, true, true)
+		a.Pages.SwitchToPage("describe")
+	}
+
+	a.Dashboard.OnAnalyze = func(ns, name string) {
 		if ag != nil {
 			db.RecordAudit(db.AuditEntry{
 				User:     "User",
-				Action:   "DESCRIBE",
+				Action:   "ANALYZE_AI",
 				Resource: a.Dashboard.CurrentResource,
 				Details:  fmt.Sprintf("%s/%s", ns, name),
 			})

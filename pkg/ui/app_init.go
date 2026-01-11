@@ -87,6 +87,10 @@ func NewApp() *App {
 		a.Pages.SwitchToPage("main")
 	})
 
+	a.DescribeViewer = NewDescribeViewer(a.Application, k8sClient, func() {
+		a.Pages.SwitchToPage("main")
+	})
+
 	a.AuditViewer = NewAuditViewer(a.Application)
 
 	a.Dashboard = NewDashboard(a.Application, k8sClient, func(cmd string) {

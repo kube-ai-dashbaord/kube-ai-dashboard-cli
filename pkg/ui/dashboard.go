@@ -36,6 +36,7 @@ type Dashboard struct {
 	OnDeleteRequested  func(namespace, name string)
 	OnYaml             func(namespace, name string)
 	OnDescribe         func(namespace, name string)
+	OnAnalyze          func(namespace, name string)
 	OnScale            func(namespace, name string)
 	OnRestart          func(namespace, name string)
 	OnPortForward      func(namespace, name string)
@@ -167,13 +168,24 @@ func NewDashboard(app *tview.Application, k8sClient *k8s.Client, onSelected func
 			return nil
 		}
 
-		if event.Rune() == 'd' { // Describe (AI)
+		if event.Rune() == 'd' { // Describe (Native)
 			row, _ := d.Root.GetSelection()
 			if row > 0 {
 				name := d.Root.GetCell(row, 1).Text
 				ns := d.CurrentNamespace
 				if d.OnDescribe != nil {
 					d.OnDescribe(ns, name)
+				}
+			}
+			return nil
+		}
+		if event.Rune() == 'L' { // Analyze (AI)
+			row, _ := d.Root.GetSelection()
+			if row > 0 {
+				name := d.Root.GetCell(row, 1).Text
+				ns := d.CurrentNamespace
+				if d.OnAnalyze != nil {
+					d.OnAnalyze(ns, name)
 				}
 			}
 			return nil

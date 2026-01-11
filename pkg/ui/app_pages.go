@@ -21,11 +21,12 @@ func (a *App) initPages() {
 		SetRegions(true).
 		SetWrap(false).
 		SetTextAlign(tview.AlignCenter).
-		SetText(fmt.Sprintf(" [yellow]%s  [white]|  [yellow]%s  [white]|  [yellow]%s  [white]|  [yellow]%s  [white]|  [yellow]%s  [white]|  [yellow]%s  [white]|  [yellow]%s ",
+		SetText(fmt.Sprintf(" [yellow]%s  [white]|  [yellow]%s  [white]|  [yellow]%s  [white]|  [yellow]%s  [white]|  [yellow]%s  [white]|  [yellow]%s  [white]|  [yellow]%s  [white]|  [yellow]%s ",
 			i18n.T("shortcut_help"),
 			i18n.T("shortcut_cmd"),
 			i18n.T("shortcut_settings"),
 			i18n.T("shortcut_yaml"),
+			i18n.T("shortcut_describe"),
 			i18n.T("shortcut_analyze"),
 			i18n.T("shortcut_forward"),
 			i18n.T("shortcut_quit")))
@@ -59,8 +60,35 @@ func (a *App) initPages() {
 }
 
 func (a *App) handleCommand(cmd string) {
-	if cmd == "audit" {
+	parts := strings.Fields(cmd)
+	if len(parts) == 0 {
+		return
+	}
+
+	mainCmd := parts[0]
+	switch mainCmd {
+	case "audit":
 		a.Pages.SwitchToPage("audit")
 		a.Application.SetFocus(a.AuditViewer.Table)
+	case "view":
+		if len(parts) >= 3 {
+			// :view <type> <name> [<ns>]
+			resType := parts[1]
+			name := parts[2]
+			ns := ""
+			if len(parts) >= 4 {
+				ns = parts[3]
+			}
+			a.ViewResource(resType, ns, name)
+		}
 	}
+}
+
+func (a *App) ViewResource(resType, ns, name string) {
+	if ns != "" {
+		a.Dashboard.CurrentNamespace = ns
+	}
+	a.Dashboard.SetResource(resType)
+	// We could also select the row with the name... but Refresh() is async.
+	// For now, just switching the view is a huge step.
 }

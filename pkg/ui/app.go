@@ -17,6 +17,7 @@ type App struct {
 	Assistant       *Assistant
 	LogViewer       *LogViewer
 	YamlViewer      *YamlViewer
+	DescribeViewer  *DescribeViewer
 	AuditViewer     *AuditViewer
 	Reporter        *ai.Reporter
 	Settings        *Settings

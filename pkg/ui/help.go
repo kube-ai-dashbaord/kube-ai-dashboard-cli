@@ -31,6 +31,7 @@ func NewHelp(onClose func()) *Help {
 			i18n.T("cat_nav"),
 			[]shortcut{
 				{":<res>", i18n.T("desc_switch")},
+				{":view <t> <n> [ns]", "Focus a specific resource (Synergy)"},
 				{":ctx", i18n.T("desc_ctx")},
 				{":audit", i18n.T("desc_audit")},
 				{"/<query>", i18n.T("desc_filter")},
@@ -42,7 +43,8 @@ func NewHelp(onClose func()) *Help {
 			i18n.T("cat_res"),
 			[]shortcut{
 				{"y", i18n.T("desc_yaml")},
-				{"d", i18n.T("desc_analyze")},
+				{"d", i18n.T("desc_describe")},
+				{"L", i18n.T("desc_analyze")},
 				{"h", i18n.T("desc_explain")},
 				{"s", i18n.T("desc_scale")},
 				{"r", i18n.T("desc_restart")},
