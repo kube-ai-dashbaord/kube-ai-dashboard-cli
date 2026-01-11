@@ -137,6 +137,7 @@ func (a *App) initPages() {
 }
 
 func (a *App) handleCommand(cmd string) {
+	Debugf("Executing command: %s", cmd)
 	parts := strings.Fields(cmd)
 	if len(parts) == 0 {
 		return

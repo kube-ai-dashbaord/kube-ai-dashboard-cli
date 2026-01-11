@@ -90,6 +90,9 @@ func NewDashboard(app *tview.Application, k8sClient *k8s.Client, onSelected func
 	})
 
 	d.Root.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyRune {
+			Debugf("Dashboard key pressed: %c", event.Rune())
+		}
 		// handle 0-9 for quick selection
 		if event.Rune() >= '0' && event.Rune() <= '9' {
 			idx := int(event.Rune() - '0')

@@ -14,6 +14,7 @@ type Config struct {
 	EnableAudit  bool      `json:"enable_audit"`
 	Language     string    `json:"language"`
 	BeginnerMode bool      `json:"beginner_mode"`
+	LogLevel     string    `json:"log_level"`
 }
 
 type LLMConfig struct {
@@ -27,28 +28,37 @@ func GetConfigPath() string {
 	return filepath.Join(xdg.ConfigHome, "k13s", "config.yaml")
 }
 
+func NewDefaultConfig() *Config {
+	return &Config{
+		LLM: LLMConfig{
+			Provider: "openai",
+			Model:    "gpt-4",
+		},
+		Language:     "en",
+		BeginnerMode: true,
+		LogLevel:     "info",
+		ReportPath:   "report.md",
+		EnableAudit:  true,
+	}
+}
+
 func LoadConfig() (*Config, error) {
 	path := GetConfigPath()
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return &Config{
-			LLM: LLMConfig{
-				Provider: "openai",
-				Model:    "gpt-4",
-			},
-		}, nil
+		return NewDefaultConfig(), nil
 	}
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return NewDefaultConfig(), nil // Fail gracefully to defaults
 	}
 
-	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, err
+	cfg := NewDefaultConfig()
+	if err := yaml.Unmarshal(data, cfg); err != nil {
+		return NewDefaultConfig(), nil // Fail gracefully to defaults
 	}
 
-	return &cfg, nil
+	return cfg, nil
 }
 
 func (c *Config) Save() error {

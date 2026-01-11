@@ -9,6 +9,11 @@ k13s
 # Test binary, built with 'go test -c'
 *.test
 
+# Logs and Reports
+*.log
+report.md
+report-*.html
+
 # Output of the go coverage tool, specifically when used with Litmus
 *.out
 

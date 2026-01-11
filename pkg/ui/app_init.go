@@ -68,10 +68,15 @@ func InitApp(tviewApp *tview.Application, cfg *config.Config, aiClient *ai.Clien
 	a.K8sClient = k8sClient
 	a.Reporter = reporter
 
+	InitLogger("k13s.log", cfg.LogLevel)
+	Infof("Starting k13s with log level: %s", cfg.LogLevel)
+
 	a.Settings = NewSettings(cfg, func(newCfg *config.Config) {
 		a.Config = newCfg
 		a.Config.Save()
 		i18n.SetLanguage(newCfg.Language)
+		InitLogger("k13s.log", newCfg.LogLevel)
+		Infof("Log level updated to: %s", newCfg.LogLevel)
 		newAI, _ := ai.NewClient(&newCfg.LLM)
 		a.AIClient = newAI
 		a.Reporter.OutputPath = newCfg.ReportPath
@@ -83,10 +88,6 @@ func InitApp(tviewApp *tview.Application, cfg *config.Config, aiClient *ai.Clien
 	}, func() {
 		a.Pages.SwitchToPage("main")
 	})
-
-	a.Header = a.CreateHeader()
-	a.HeaderContainer = tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(a.Header, 3, 0, false)
 
 	a.LogViewer = NewLogViewer(a.Application, k8sClient, func() {
 		a.Pages.SwitchToPage("main")
@@ -132,12 +133,17 @@ func InitApp(tviewApp *tview.Application, cfg *config.Config, aiClient *ai.Clien
 	}
 
 	a.Dashboard.OnExplainRequested = func(ns, name string) {
+		Infof("AI Explain requested for %s in %s", name, ns)
 		a.Application.SetFocus(a.Assistant.Input)
 		res := a.Dashboard.CurrentResource
 		prompt := fmt.Sprintf("Explain this %s %s in namespace %s in detail for a beginner.", res, name, ns)
 		a.Assistant.Input.SetText(prompt)
 		// We could auto-submit, but letting the user see the prompt is better for pedagogical value
 	}
+
+	a.Header = a.CreateHeader()
+	a.HeaderContainer = tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(a.Header, 3, 0, false)
 
 	a.initCallbacks(ag)
 	a.initPages()

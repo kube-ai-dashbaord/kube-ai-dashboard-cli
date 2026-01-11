@@ -31,6 +31,7 @@ func NewSettings(cfg *config.Config, onSave func(*config.Config), onCancel func(
 		AddPasswordField("API Key", cfg.LLM.APIKey, 40, '*', nil).
 		AddInputField("Report Path", cfg.ReportPath, 40, nil, nil).
 		AddCheckbox("Enable Audit Log", cfg.EnableAudit, nil).
+		AddDropDown("Log Level", []string{"debug", "info", "warn", "error"}, 1, nil).
 		AddCheckbox("Beginner Mode", cfg.BeginnerMode, nil).
 		AddButton("Save", func() {
 			_, lang := s.Form.GetFormItemByLabel("Language").(*tview.DropDown).GetCurrentOption()
@@ -40,6 +41,7 @@ func NewSettings(cfg *config.Config, onSave func(*config.Config), onCancel func(
 			apiKey := s.Form.GetFormItemByLabel("API Key").(*tview.InputField).GetText()
 			reportPath := s.Form.GetFormItemByLabel("Report Path").(*tview.InputField).GetText()
 			enableAudit := s.Form.GetFormItemByLabel("Enable Audit Log").(*tview.Checkbox).IsChecked()
+			_, logLevel := s.Form.GetFormItemByLabel("Log Level").(*tview.DropDown).GetCurrentOption()
 			beginnerMode := s.Form.GetFormItemByLabel("Beginner Mode").(*tview.Checkbox).IsChecked()
 
 			newCfg := &config.Config{
@@ -53,6 +55,7 @@ func NewSettings(cfg *config.Config, onSave func(*config.Config), onCancel func(
 				ReportPath:   reportPath,
 				EnableAudit:  enableAudit,
 				BeginnerMode: beginnerMode,
+				LogLevel:     logLevel,
 			}
 			if onSave != nil {
 				onSave(newCfg)

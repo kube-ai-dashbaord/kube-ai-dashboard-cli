@@ -126,6 +126,7 @@ func (a *Assistant) handleAgentMessage(msg any) {
 					sender = "User"
 				}
 				fmt.Fprintf(a.Chat, "\n[yellow]%s: [white]%s\n", sender, m.Payload)
+				Infof("AI Chat Message: %s: %s", sender, m.Payload)
 				db.RecordAudit(db.AuditEntry{
 					User:    sender,
 					Action:  "CHAT",
