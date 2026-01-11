@@ -11,7 +11,7 @@ import (
 )
 
 type Client struct {
-	llm gollm.Client
+	LLM gollm.Client
 	cfg *config.LLMConfig
 }
 
@@ -43,13 +43,13 @@ func NewClient(cfg *config.LLMConfig) (*Client, error) {
 	}
 
 	return &Client{
-		llm: client,
+		LLM: client,
 		cfg: cfg,
 	}, nil
 }
 
 func (c *Client) Ask(ctx context.Context, prompt string, callback func(string)) error {
-	chat := c.llm.StartChat("You are a helpful Kubernetes assistant.", c.cfg.Model)
+	chat := c.LLM.StartChat("You are a helpful Kubernetes assistant.", c.cfg.Model)
 
 	stream, err := chat.SendStreaming(ctx, prompt)
 	if err != nil {
@@ -74,4 +74,9 @@ func (c *Client) Ask(ctx context.Context, prompt string, callback func(string)) 
 	}
 
 	return nil
+}
+func (c *Client) CheckStatus(ctx context.Context) error {
+	chat := c.LLM.StartChat("System", c.cfg.Model)
+	_, err := chat.Send(ctx, "ping")
+	return err
 }

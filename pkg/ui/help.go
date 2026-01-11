@@ -1,7 +1,10 @@
 package ui
 
 import (
+	"fmt"
+
 	"github.com/gdamore/tcell/v2"
+	"github.com/kube-ai-dashbaord/kube-ai-dashboard-cli/pkg/i18n"
 	"github.com/rivo/tview"
 )
 
@@ -11,29 +14,59 @@ type Help struct {
 
 func NewHelp(onClose func()) *Help {
 	table := tview.NewTable().
-		SetBorders(true).
-		SetSelectable(false, false)
+		SetBorders(false).
+		SetSelectable(false, false).
+		SetFixed(1, 1)
 
-	shortcuts := [][]string{
-		{":<resource>", "Switch to resource (pods, nodes, svc, deploy, etc.)"},
-		{":ns", "List namespaces (then type name while in ns list to switch)"},
-		{"l", "AI-powered log analysis for selected resource"},
-		{"d", "AI-powered description of selected resource"},
-		{"s", "Open LLM Settings and configuration"},
-		{"?", "Show this help screen"},
-		{"esc", "Close current view or command bar"},
-		{"ctrl-c", "Exit the application"},
+	type shortcut struct {
+		key  string
+		desc string
 	}
 
-	table.SetCell(0, 0, tview.NewTableCell("Key").SetTextColor(tcell.ColorYellow).SetAttributes(tcell.AttrBold))
-	table.SetCell(0, 1, tview.NewTableCell("Description").SetTextColor(tcell.ColorYellow).SetAttributes(tcell.AttrBold))
-
-	for i, s := range shortcuts {
-		table.SetCell(i+1, 0, tview.NewTableCell(s[0]).SetTextColor(tcell.ColorAqua))
-		table.SetCell(i+1, 1, tview.NewTableCell(s[1]).SetTextColor(tcell.ColorWhite))
+	categories := []struct {
+		name      string
+		shortcuts []shortcut
+	}{
+		{
+			i18n.T("cat_nav"),
+			[]shortcut{
+				{":<res>", i18n.T("desc_switch")},
+				{":ctx", i18n.T("desc_ctx")},
+				{":audit", i18n.T("desc_audit")},
+				{"/<query>", i18n.T("desc_filter")},
+				{"s", i18n.T("shortcut_settings")},
+				{"?", i18n.T("shortcut_help")},
+			},
+		},
+		{
+			i18n.T("cat_res"),
+			[]shortcut{
+				{"y", i18n.T("desc_yaml")},
+				{"d", i18n.T("desc_analyze")},
+				{"h", i18n.T("desc_explain")},
+				{"s", i18n.T("desc_scale")},
+				{"r", i18n.T("desc_restart")},
+				{"Shift-F", i18n.T("desc_forward")},
+				{"l", i18n.T("desc_logs")},
+				{"Ctrl-D", i18n.T("desc_delete")},
+			},
+		},
 	}
 
-	table.SetBorder(true).SetTitle(" k15s Shortcuts & Help ")
+	row := 0
+	for _, cat := range categories {
+		table.SetCell(row, 0, tview.NewTableCell(" "+cat.name+" ").SetTextColor(tcell.ColorYellow).SetAttributes(tcell.AttrBold))
+		table.SetCell(row, 1, tview.NewTableCell(""))
+		row++
+		for _, s := range cat.shortcuts {
+			table.SetCell(row, 0, tview.NewTableCell("   "+s.key).SetTextColor(tcell.ColorAqua))
+			table.SetCell(row, 1, tview.NewTableCell(s.desc).SetTextColor(tcell.ColorWhite))
+			row++
+		}
+		row++ // spacer
+	}
+
+	table.SetBorder(true).SetTitle(fmt.Sprintf(" %s ", i18n.T("help_title"))).SetTitleAlign(tview.AlignCenter)
 
 	table.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyEscape || event.Rune() == '?' {

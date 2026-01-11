@@ -9,7 +9,11 @@ import (
 )
 
 type Config struct {
-	LLM LLMConfig `yaml:"llm"`
+	LLM          LLMConfig `json:"llm"`
+	ReportPath   string    `json:"report_path"`
+	EnableAudit  bool      `json:"enable_audit"`
+	Language     string    `json:"language"`
+	BeginnerMode bool      `json:"beginner_mode"`
 }
 
 type LLMConfig struct {
@@ -20,7 +24,7 @@ type LLMConfig struct {
 }
 
 func GetConfigPath() string {
-	return filepath.Join(xdg.ConfigHome, "kube-ai-dashboard-cli", "config.yaml")
+	return filepath.Join(xdg.ConfigHome, "k13s", "config.yaml")
 }
 
 func LoadConfig() (*Config, error) {
