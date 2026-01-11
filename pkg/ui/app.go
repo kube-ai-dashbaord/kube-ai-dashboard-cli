@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/agent"
+	"github.com/gdamore/tcell/v2"
 	"github.com/kube-ai-dashbaord/kube-ai-dashboard-cli/pkg/ai"
 	"github.com/kube-ai-dashbaord/kube-ai-dashboard-cli/pkg/config"
 	"github.com/kube-ai-dashbaord/kube-ai-dashboard-cli/pkg/k8s"
@@ -43,6 +44,16 @@ func (a *App) Run() error {
 			a.handlePanic(r)
 		}
 	}()
+
+	// Trigger initial refresh after the first draw
+	firstDraw := true
+	a.Application.SetAfterDrawFunc(func(screen tcell.Screen) {
+		if firstDraw {
+			firstDraw = false
+			go a.Dashboard.Refresh()
+		}
+	})
+
 	return a.Application.SetRoot(a.Pages, true).Run()
 }
 

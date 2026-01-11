@@ -266,7 +266,8 @@ func NewDashboard(app *tview.Application, k8sClient *k8s.Client, onSelected func
 		return event
 	})
 
-	d.Refresh()
+	// Note: Refresh is NOT called here. It will be triggered by SetAfterDrawFunc in app.Run()
+	// after the event loop starts, ensuring QueueUpdateDraw callbacks are processed.
 	return d
 }
 
@@ -475,9 +476,12 @@ func (d *Dashboard) Refresh() {
 		}
 
 		// Apply updates to the UI
+		log.Infof("Refresh: Queuing UI update (headers: %d, rows: %d, err: %v)", len(headers), len(rows), fetchErr)
 		d.App.QueueUpdateDraw(func() {
+			log.Infof("Refresh: QueueUpdateDraw EXECUTING (setting %d rows)", len(rows))
 			d.Root.Clear()
 			if fetchErr != nil {
+				log.Errorf("Refresh: Displaying error: %v", fetchErr)
 				d.Root.SetCell(0, 0, tview.NewTableCell(fmt.Sprintf("Error: %v", fetchErr)).SetTextColor(tcell.ColorRed))
 				return
 			}
@@ -491,6 +495,7 @@ func (d *Dashboard) Refresh() {
 					d.Root.SetCell(r+1, i, tview.NewTableCell(cell.Text).SetTextColor(cell.Color))
 				}
 			}
+			log.Infof("Refresh: Table updated successfully with %d rows", len(rows))
 			d.Root.ScrollToBeginning()
 			if d.OnRefresh != nil {
 				d.OnRefresh()

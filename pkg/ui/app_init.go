@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/agent"
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/api"
@@ -150,10 +149,6 @@ func InitApp(tviewApp *tview.Application, cfg *config.Config, aiClient *ai.Clien
 	}
 
 	a.ScreenWidth = 0 // Will be detected on first draw
-	go func() {
-		time.Sleep(100 * time.Millisecond)
-		a.Dashboard.Refresh()
-	}()
 
 	a.Header = a.CreateHeader()
 	a.HeaderContainer = tview.NewFlex().SetDirection(tview.FlexRow).
