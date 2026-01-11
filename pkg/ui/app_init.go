@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/agent"
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/api"
@@ -15,6 +16,7 @@ import (
 	"github.com/kube-ai-dashbaord/kube-ai-dashboard-cli/pkg/config"
 	"github.com/kube-ai-dashbaord/kube-ai-dashboard-cli/pkg/i18n"
 	"github.com/kube-ai-dashbaord/kube-ai-dashboard-cli/pkg/k8s"
+	"github.com/kube-ai-dashbaord/kube-ai-dashboard-cli/pkg/log"
 	"github.com/rivo/tview"
 )
 
@@ -68,11 +70,19 @@ func InitApp(tviewApp *tview.Application, cfg *config.Config, aiClient *ai.Clien
 
 	a.Assistant = NewAssistant(a.Application, ag, reporter)
 	a.AIClient = aiClient
-	a.K8sClient = k8sClient
 	a.Reporter = reporter
 
 	InitLogger("k13s.log", cfg.LogLevel)
 	Infof("Starting k13s with log level: %s", cfg.LogLevel)
+	log.Infof("Core logger started with level: %s", cfg.LogLevel)
+
+	if k8sClient == nil {
+		Errorf("K8s client is NIL!")
+		log.Errorf("K8s client is NIL!")
+	} else {
+		Infof("K8s client initialized.")
+		log.Infof("K8s client initialized.")
+	}
 
 	a.Settings = NewSettings(cfg, func(newCfg *config.Config) {
 		a.Config = newCfg
@@ -137,8 +147,13 @@ func InitApp(tviewApp *tview.Application, cfg *config.Config, aiClient *ai.Clien
 		res := a.Dashboard.CurrentResource
 		prompt := fmt.Sprintf("Explain this %s %s in namespace %s in detail for a beginner.", res, name, ns)
 		a.Assistant.Input.SetText(prompt)
-		// We could auto-submit, but letting the user see the prompt is better for pedagogical value
 	}
+
+	a.ScreenWidth = 0 // Will be detected on first draw
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		a.Dashboard.Refresh()
+	}()
 
 	a.Header = a.CreateHeader()
 	a.HeaderContainer = tview.NewFlex().SetDirection(tview.FlexRow).
@@ -146,17 +161,20 @@ func InitApp(tviewApp *tview.Application, cfg *config.Config, aiClient *ai.Clien
 
 	a.initSignals()
 	a.initCallbacks(ag)
+	Infof("Initializing Pages...")
 	a.initPages()
 
+	Infof("InitApp complete.")
 	return a
 }
 
 func (a *App) initSignals() {
 	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
-		<-sig
+		s := <-sig
+		Infof("Received signal: %v", s)
 		a.Application.Stop()
 		os.Exit(0)
 	}()

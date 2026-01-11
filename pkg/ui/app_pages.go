@@ -6,6 +6,7 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/kube-ai-dashbaord/kube-ai-dashboard-cli/pkg/i18n"
+	"github.com/kube-ai-dashbaord/kube-ai-dashboard-cli/pkg/log"
 	"github.com/rivo/tview"
 )
 
@@ -16,6 +17,7 @@ func (a *App) RefreshShortcuts() {
 		fmt.Sprintf("[yellow]%s[white]", i18n.T("shortcut_cmd")),
 		fmt.Sprintf("[yellow]%s[white]", i18n.T("shortcut_settings")),
 		fmt.Sprintf("[yellow]%s[white]", i18n.T("shortcut_yaml")),
+		fmt.Sprintf("[yellow]%s[white]", i18n.T("shortcut_ai")),
 	}
 
 	// Contextual shortcuts
@@ -96,6 +98,10 @@ func (a *App) initPages() {
 			a.Application.SetFocus(a.CommandBar.Input)
 			return nil
 		}
+		if event.Rune() == 'a' {
+			a.Application.SetFocus(a.Assistant.Input)
+			return nil
+		}
 		if event.Key() == tcell.KeyTab {
 			front, _ := a.Pages.GetFrontPage()
 			if front == "main" {
@@ -144,27 +150,19 @@ func (a *App) initPages() {
 	})
 
 	// Handle Resize
-	var lastWidth int
 	a.Application.SetBeforeDrawFunc(func(screen tcell.Screen) bool {
 		w, _ := screen.Size()
-		a.ScreenWidth = w
-		if w != lastWidth {
-			lastWidth = w
-			a.Application.QueueUpdateDraw(func() {
-				if w < 100 {
-					// Prioritize Dashboard on narrow screens
-					a.DashboardWidth = 100
-					a.AssistantWidth = 0
-					a.MainContent.ResizeItem(a.Dashboard.Root, 0, 1)
-					a.MainContent.ResizeItem(a.Assistant.Root, 0, 0)
-				} else {
-					// Default split
-					a.DashboardWidth = 60
-					a.AssistantWidth = 40
-					a.MainContent.ResizeItem(a.Dashboard.Root, 0, 6)
-					a.MainContent.ResizeItem(a.Assistant.Root, 0, 4)
-				}
-			})
+		if w != a.ScreenWidth {
+			a.ScreenWidth = w
+			if w < 80 {
+				log.Infof("Narrow layout: hiding AI Assistant (width: %d)", w)
+				a.MainContent.ResizeItem(a.Dashboard.Root, 0, 1)
+				a.MainContent.ResizeItem(a.Assistant.Root, 0, 0)
+			} else {
+				log.Infof("Wide layout: showing AI Assistant (width: %d)", w)
+				a.MainContent.ResizeItem(a.Dashboard.Root, 0, 6)
+				a.MainContent.ResizeItem(a.Assistant.Root, 0, 4)
+			}
 		}
 		return false
 	})

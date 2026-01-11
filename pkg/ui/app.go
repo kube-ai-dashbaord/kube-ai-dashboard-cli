@@ -29,7 +29,6 @@ type App struct {
 	Root            *tview.Flex
 	Config          *config.Config
 	AIClient        *ai.Client
-	K8sClient       *k8s.Client
 	PulseViewer     *PulseViewer
 	ScreenWidth     int
 	DashboardWidth  int
@@ -55,17 +54,22 @@ func (a *App) handlePanic(err interface{}) {
 }
 
 func (a *App) CreateHeader() *tview.Flex {
-	ctxName, cluster, user, _ := a.K8s.GetContextInfo()
-	k8sVersion, _ := a.K8s.GetServerVersion()
-	status := "Online"
-	if a.AIClient == nil || a.AIClient.LLM == nil {
-		status = "Offline"
+	var ctxName, cluster, user, k8sVersion, ns, nsMap, resource, status string = "N/A", "N/A", "N/A", "N/A", "all", "", "pods", "Offline"
+
+	if a.K8s != nil {
+		ctxName, cluster, user, _ = a.K8s.GetContextInfo()
+		k8sVersion, _ = a.K8s.GetServerVersion()
 	}
-	ns := a.Dashboard.CurrentNamespace
-	if ns == "" {
-		ns = "all"
+	if a.AIClient != nil && a.AIClient.LLM != nil {
+		status = "Online"
 	}
-	nsMap := a.Dashboard.GetNamespaceMapping()
-	resource := a.Dashboard.CurrentResource
+	if a.Dashboard != nil {
+		ns = a.Dashboard.CurrentNamespace
+		if ns == "" {
+			ns = "all"
+		}
+		nsMap = a.Dashboard.GetNamespaceMapping()
+		resource = a.Dashboard.CurrentResource
+	}
 	return NewHeader(ctxName, cluster, user, k8sVersion, ns, status, nsMap, resource, a.ScreenWidth)
 }

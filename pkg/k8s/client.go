@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kube-ai-dashbaord/kube-ai-dashboard-cli/pkg/log"
 	"go.yaml.in/yaml/v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -93,11 +94,40 @@ func (c *Client) SwitchContext(contextName string) error {
 }
 
 func (c *Client) ListPods(ctx context.Context, namespace string) ([]corev1.Pod, error) {
-	pods, err := c.Clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, err
+	log.Infof("ListPods: ENTER (namespace: %s)", namespace)
+
+	type result struct {
+		pods []corev1.Pod
+		err  error
 	}
-	return pods.Items, nil
+	ch := make(chan result, 1)
+
+	go func() {
+		log.Infof("ListPods: GOROUTINE START: calling c.Clientset.CoreV1().Pods(%s).List", namespace)
+		pods, err := c.Clientset.CoreV1().Pods(namespace).List(context.Background(), metav1.ListOptions{})
+		if err != nil {
+			ch <- result{err: err}
+			return
+		}
+		ch <- result{pods: pods.Items}
+		log.Infof("ListPods: GOROUTINE END: success (found %d)", len(pods.Items))
+	}()
+
+	select {
+	case res := <-ch:
+		if res.err != nil {
+			log.Errorf("ListPods: ERROR: %v", res.err)
+		} else {
+			log.Infof("ListPods: SUCCESS")
+		}
+		return res.pods, res.err
+	case <-ctx.Done():
+		log.Errorf("ListPods: TIMEOUT/CANCELLED: %v", ctx.Err())
+		return nil, ctx.Err()
+	case <-time.After(5 * time.Second):
+		log.Errorf("ListPods: HARD TIMEOUT (5s reached)")
+		return nil, fmt.Errorf("kubernetes API timeout (5s)")
+	}
 }
 
 func (c *Client) ListNodes(ctx context.Context) ([]corev1.Node, error) {
@@ -157,11 +187,30 @@ func (c *Client) ListIngresses(ctx context.Context, namespace string) ([]network
 }
 
 func (c *Client) ListNamespaces(ctx context.Context) ([]corev1.Namespace, error) {
-	ns, err := c.Clientset.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, err
+	log.Infof("ListNamespaces: ENTER")
+	type result struct {
+		ns  []corev1.Namespace
+		err error
 	}
-	return ns.Items, nil
+	ch := make(chan result, 1)
+
+	go func() {
+		ns, err := c.Clientset.CoreV1().Namespaces().List(context.Background(), metav1.ListOptions{})
+		if err != nil {
+			ch <- result{err: err}
+			return
+		}
+		ch <- result{ns: ns.Items}
+	}()
+
+	select {
+	case res := <-ch:
+		return res.ns, res.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-time.After(5 * time.Second):
+		return nil, fmt.Errorf("kubernetes API timeout (5s)")
+	}
 }
 
 func (c *Client) GetPodLogs(ctx context.Context, namespace, name, container string, tailLines int64) (string, error) {

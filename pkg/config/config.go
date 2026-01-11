@@ -36,7 +36,7 @@ func NewDefaultConfig() *Config {
 		},
 		Language:     "en",
 		BeginnerMode: true,
-		LogLevel:     "info",
+		LogLevel:     "debug",
 		ReportPath:   "report.md",
 		EnableAudit:  true,
 	}

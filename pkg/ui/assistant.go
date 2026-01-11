@@ -52,13 +52,15 @@ func NewAssistant(app *tview.Application, ag *agent.Agent, reporter *ai.Reporter
 			}
 			a.Input.SetText("")
 
-			if a.Agent != nil {
+			if a.Agent != nil && a.Agent.Input != nil {
 				query := text
 				if a.SelectedContext != "" {
 					query = fmt.Sprintf("[Context: %s] %s", a.SelectedContext, text)
 				}
 				Infof("User query sent to AI Agent: %s", query)
 				a.Agent.Input <- &api.UserInputResponse{Query: query}
+			} else {
+				fmt.Fprintf(a.Chat, "\n[red]AI Agent not connected.[white]\n")
 			}
 		}
 	})
@@ -167,15 +169,17 @@ func (a *Assistant) showChoiceUI(req *api.UserChoiceRequest) {
 	for i, opt := range req.Options {
 		idx := i + 1
 		a.ChoiceList.AddItem(opt.Label, opt.Value, 0, func() {
-			a.Agent.Input <- &api.UserChoiceResponse{Choice: idx}
+			if a.Agent != nil && a.Agent.Input != nil {
+				a.Agent.Input <- &api.UserChoiceResponse{Choice: idx}
+			}
 			a.hideChoiceUI()
 		})
 	}
 	// Add an option to cancel/decline if not already there or as a standard
 	a.ChoiceList.AddItem("Cancel", "Decline this action", 'q', func() {
-		// Assuming choice 3 is 'no' as per common Agent logic, but we should be careful.
-		// Usually handleChoice handles this.
-		a.Agent.Input <- &api.UserChoiceResponse{Choice: 3}
+		if a.Agent != nil && a.Agent.Input != nil {
+			a.Agent.Input <- &api.UserChoiceResponse{Choice: 3}
+		}
 		a.hideChoiceUI()
 	})
 
@@ -199,7 +203,7 @@ func (a *Assistant) AppendChat(sender, message string) {
 }
 
 func (a *Assistant) SendMessage(message string) {
-	if a.Agent != nil {
+	if a.Agent != nil && a.Agent.Input != nil {
 		a.Agent.Input <- &api.UserInputResponse{Query: message}
 	}
 }

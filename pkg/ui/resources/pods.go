@@ -7,16 +7,24 @@ import (
 	"time"
 
 	"github.com/kube-ai-dashbaord/kube-ai-dashboard-cli/pkg/k8s"
+	"github.com/kube-ai-dashbaord/kube-ai-dashboard-cli/pkg/log"
 )
 
 func GetPodsView(ctx context.Context, client *k8s.Client, namespace, filter string, getStatusColor func(string) any) (ResourceView, error) {
+	log.Infof("GetPodsView called for namespace: %s, filter: %s", namespace, filter)
 	headers := []string{"NAMESPACE", "NAME", "READY", "STATUS", "RESTARTS", "CPU(m)", "MEM(MB)", "AGE"}
 	podsList, err := client.ListPods(ctx, namespace)
 	if err != nil {
 		return ResourceView{}, err
 	}
 
-	metrics, _ := client.GetPodMetrics(ctx, namespace)
+	log.Infof("GetPodsView: fetching pod metrics for namespace: %s", namespace)
+	metrics, err := client.GetPodMetrics(ctx, namespace)
+	if err != nil {
+		log.Warnf("Failed to fetch pod metrics: %v", err)
+	} else {
+		log.Infof("Successfully fetched metrics for %d pods", len(metrics))
+	}
 	var rows [][]TableCell
 
 	for _, p := range podsList {

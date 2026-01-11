@@ -10,6 +10,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/kube-ai-dashbaord/kube-ai-dashboard-cli/pkg/i18n"
 	"github.com/kube-ai-dashbaord/kube-ai-dashboard-cli/pkg/k8s"
+	"github.com/kube-ai-dashbaord/kube-ai-dashboard-cli/pkg/log"
 	"github.com/kube-ai-dashbaord/kube-ai-dashboard-cli/pkg/ui/resources"
 	"github.com/rivo/tview"
 )
@@ -271,38 +272,55 @@ func NewDashboard(app *tview.Application, k8sClient *k8s.Client, onSelected func
 
 func (d *Dashboard) Refresh() {
 	if d.K8s == nil {
-		d.Root.Clear()
-		d.Root.SetCell(0, 0, tview.NewTableCell(i18n.T("error_client")).SetTextColor(tcell.ColorRed))
+		log.Errorf("Dashboard.Refresh: K8s client is nil")
+		d.App.QueueUpdateDraw(func() {
+			d.Root.Clear()
+			d.Root.SetCell(0, 0, tview.NewTableCell(i18n.T("error_client")).SetTextColor(tcell.ColorRed))
+		})
 		return
 	}
 
-	// Clear the table and show a loading message immediately
+	if d.isRefreshing.Swap(true) {
+		log.Infof("Dashboard refresh skipped: already in progress")
+		return // Already refreshing
+	}
+
+	// Only clear and show loading if we are actually starting a new refresh
 	d.Root.Clear()
 	d.Root.SetCell(0, 0, tview.NewTableCell(i18n.T("loading")).SetTextColor(tcell.ColorGray))
 
-	if d.isRefreshing.Swap(true) {
-		return // Already refreshing
-	}
+	log.Infof("Dashboard refresh starting (with namespace: %s, resource: %s)", d.CurrentNamespace, d.CurrentResource)
 
 	// Fetch data in background
 	go func() {
 		defer d.isRefreshing.Store(false)
-		ctx := context.Background()
+		defer func() {
+			if r := recover(); r != nil {
+				Errorf("PANIC in Refresh goroutine: %v", r)
+				log.Errorf("PANIC in Refresh goroutine: %v", r)
+			}
+		}()
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 		// We'll prepare rows and headers in advance
 		var headers []string
 		var rows [][]resources.TableCell
 		var fetchErr error
 
-		d.UpdateQuickNamespaces(ctx)
+		go d.UpdateQuickNamespaces(context.Background())
 
+		Infof("Refreshing resource: %s in namespace: %s", d.CurrentResource, d.CurrentNamespace)
 		switch d.CurrentResource {
 		case "pods", "po":
+			log.Infof("Refresh: Dispatching GetPodsView...")
 			view, err := resources.GetPodsView(ctx, d.K8s, d.CurrentNamespace, d.Filter, nil)
 			if err != nil {
+				log.Errorf("Refresh: GetPodsView error: %v", err)
 				fetchErr = err
 			} else {
 				headers = view.Headers
 				rows = view.Rows
+				log.Infof("Refresh: GetPodsView success (fetched %d rows)", len(rows))
 			}
 		case "nodes", "no":
 			headers = []string{"NAME", "STATUS", "ROLES", "VERSION", "CPU(m)", "MEM(MB)", "AGE"}
@@ -504,11 +522,21 @@ func formatAge(dur time.Duration) string {
 	}
 }
 func (d *Dashboard) UpdateQuickNamespaces(ctx context.Context) {
+	Infof("Updating quick namespaces...")
+	log.Infof("Updating quick namespaces...")
+	if d.K8s == nil {
+		log.Errorf("K8s is nil in UpdateQuickNamespaces")
+		return
+	}
 	nss, err := d.K8s.ListNamespaces(ctx)
 	if err != nil {
+		Errorf("Failed to list namespaces: %v", err)
+		log.Errorf("Failed to list namespaces: %v", err)
 		d.QuickNamespaces = []string{""} // Fallback to all
 		return
 	}
+	Infof("Found %d namespaces", len(nss))
+	log.Infof("Found %d namespaces", len(nss))
 
 	// 0 is always "all"
 	mapping := []string{""}

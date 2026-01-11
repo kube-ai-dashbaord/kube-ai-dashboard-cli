@@ -1,15 +1,13 @@
 package ui
 
 import (
-	"io"
-	"log"
-	"os"
 	"strings"
+
+	"github.com/kube-ai-dashbaord/kube-ai-dashboard-cli/pkg/log"
 )
 
 var (
-	Logger *log.Logger
-	level  int
+	level int
 )
 
 const (
@@ -20,20 +18,6 @@ const (
 )
 
 func InitLogger(logPath string, logLevel string) {
-	var out io.Writer
-	if logPath != "" {
-		f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-		if err == nil {
-			out = f
-		} else {
-			out = os.Stderr
-		}
-	} else {
-		out = os.Stderr
-	}
-
-	Logger = log.New(out, "[k13s] ", log.LstdFlags)
-
 	switch strings.ToLower(logLevel) {
 	case "debug":
 		level = LevelDebug
@@ -44,28 +28,29 @@ func InitLogger(logPath string, logLevel string) {
 	default:
 		level = LevelInfo
 	}
+	// pkg/log.Init is typically called in main.go
 }
 
 func Debugf(format string, v ...interface{}) {
 	if level <= LevelDebug {
-		Logger.Printf("[DEBUG] "+format, v...)
+		log.Debugf(format, v...)
 	}
 }
 
 func Infof(format string, v ...interface{}) {
 	if level <= LevelInfo {
-		Logger.Printf("[INFO] "+format, v...)
+		log.Infof(format, v...)
 	}
 }
 
 func Warnf(format string, v ...interface{}) {
 	if level <= LevelWarn {
-		Logger.Printf("[WARN] "+format, v...)
+		log.Warnf(format, v...)
 	}
 }
 
 func Errorf(format string, v ...interface{}) {
 	if level <= LevelError {
-		Logger.Printf("[ERROR] "+format, v...)
+		log.Errorf(format, v...)
 	}
 }
