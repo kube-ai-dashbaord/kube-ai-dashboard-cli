@@ -4,9 +4,41 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/gdamore/tcell/v2"
 	"github.com/kube-ai-dashbaord/kube-ai-dashboard-cli/pkg/i18n"
 	"github.com/rivo/tview"
 )
+
+func (a *App) RefreshShortcuts() {
+	res := a.Dashboard.CurrentResource
+	shortcuts := []string{
+		fmt.Sprintf("[yellow]%s[white]", i18n.T("shortcut_help")),
+		fmt.Sprintf("[yellow]%s[white]", i18n.T("shortcut_cmd")),
+		fmt.Sprintf("[yellow]%s[white]", i18n.T("shortcut_settings")),
+		fmt.Sprintf("[yellow]%s[white]", i18n.T("shortcut_yaml")),
+	}
+
+	// Contextual shortcuts
+	if res == "pods" || res == "po" {
+		shortcuts = append(shortcuts, fmt.Sprintf("[yellow]%s[white]", i18n.T("desc_logs")))
+		shortcuts = append(shortcuts, fmt.Sprintf("[yellow]%s[white]", i18n.T("desc_describe")))
+		shortcuts = append(shortcuts, fmt.Sprintf("[yellow]L [white]%s", i18n.T("desc_analyze")))
+		shortcuts = append(shortcuts, fmt.Sprintf("[yellow]S [white]%s", i18n.T("desc_scale")))
+		shortcuts = append(shortcuts, fmt.Sprintf("[yellow]r [white]%s", i18n.T("desc_restart")))
+	} else if res == "deploy" || res == "deployments" || res == "sts" || res == "statefulsets" {
+		shortcuts = append(shortcuts, fmt.Sprintf("[yellow]%s[white]", i18n.T("desc_describe")))
+		shortcuts = append(shortcuts, fmt.Sprintf("[yellow]L [white]%s", i18n.T("desc_analyze")))
+		shortcuts = append(shortcuts, fmt.Sprintf("[yellow]S [white]%s", i18n.T("desc_scale")))
+		shortcuts = append(shortcuts, fmt.Sprintf("[yellow]r [white]%s", i18n.T("desc_restart")))
+	} else if res != "" {
+		shortcuts = append(shortcuts, fmt.Sprintf("[yellow]%s[white]", i18n.T("desc_describe")))
+		shortcuts = append(shortcuts, fmt.Sprintf("[yellow]L [white]%s", i18n.T("desc_analyze")))
+	}
+
+	shortcuts = append(shortcuts, fmt.Sprintf("[yellow]%s[white]", i18n.T("shortcut_quit")))
+
+	a.ShortcutBar.SetText(" " + strings.Join(shortcuts, "  |  "))
+}
 
 func (a *App) initPages() {
 	a.DashboardWidth = 60
@@ -20,16 +52,8 @@ func (a *App) initPages() {
 		SetDynamicColors(true).
 		SetRegions(true).
 		SetWrap(false).
-		SetTextAlign(tview.AlignCenter).
-		SetText(fmt.Sprintf(" [yellow]%s  [white]|  [yellow]%s  [white]|  [yellow]%s  [white]|  [yellow]%s  [white]|  [yellow]%s  [white]|  [yellow]%s  [white]|  [yellow]%s  [white]|  [yellow]%s ",
-			i18n.T("shortcut_help"),
-			i18n.T("shortcut_cmd"),
-			i18n.T("shortcut_settings"),
-			i18n.T("shortcut_yaml"),
-			i18n.T("shortcut_describe"),
-			i18n.T("shortcut_analyze"),
-			i18n.T("shortcut_forward"),
-			i18n.T("shortcut_quit")))
+		SetTextAlign(tview.AlignCenter)
+	a.RefreshShortcuts()
 
 	a.CommandBar = NewCommandBar(func(cmd string) {
 		if strings.HasPrefix(cmd, ":") {
@@ -57,6 +81,59 @@ func (a *App) initPages() {
 	a.Pages.AddPage("help", a.Help.Table, true, false)
 	a.AuditViewer.Table.SetTitle(fmt.Sprintf(" %s ", i18n.T("audit_logs")))
 	a.Pages.AddPage("audit", a.AuditViewer.Table, true, false)
+
+	a.Application.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		// Global Keys
+		if event.Rune() == '?' {
+			a.Pages.ShowPage("help")
+			return nil
+		}
+		if event.Rune() == 's' {
+			a.Pages.SwitchToPage("settings")
+			return nil
+		}
+		if event.Rune() == '/' {
+			a.Application.SetFocus(a.CommandBar.Input)
+			return nil
+		}
+		if event.Key() == tcell.KeyTab {
+			if a.Dashboard.Root.HasFocus() {
+				a.Application.SetFocus(a.Assistant.Input)
+			} else {
+				a.Application.SetFocus(a.Dashboard.Root)
+			}
+			return nil
+		}
+		if event.Key() == tcell.KeyCtrlH {
+			if a.DashboardWidth > 10 {
+				a.DashboardWidth -= 2
+				a.AssistantWidth += 2
+				mainContent.ResizeItem(a.Dashboard.Root, 0, a.DashboardWidth)
+				mainContent.ResizeItem(a.Assistant.Root, 0, a.AssistantWidth)
+			}
+			return nil
+		}
+		if event.Key() == tcell.KeyCtrlL {
+			if a.AssistantWidth > 10 {
+				a.DashboardWidth += 2
+				a.AssistantWidth -= 2
+				mainContent.ResizeItem(a.Dashboard.Root, 0, a.DashboardWidth)
+				mainContent.ResizeItem(a.Assistant.Root, 0, a.AssistantWidth)
+			}
+			return nil
+		}
+		if event.Key() == tcell.KeyEscape {
+			// If in a sub-page, return to main
+			front, _ := a.Pages.GetFrontPage()
+			if front != "main" {
+				a.Pages.SwitchToPage("main")
+				a.Application.SetFocus(a.Dashboard.Root)
+				return nil
+			}
+		}
+
+		return event
+	})
 }
 
 func (a *App) handleCommand(cmd string) {
@@ -81,6 +158,10 @@ func (a *App) handleCommand(cmd string) {
 			}
 			a.ViewResource(resType, ns, name)
 		}
+	case "pulse", "events":
+		a.PulseViewer.Refresh()
+		a.Pages.AddPage("pulse", a.PulseViewer.Table, true, true)
+		a.Pages.SwitchToPage("pulse")
 	}
 }
 
@@ -89,6 +170,5 @@ func (a *App) ViewResource(resType, ns, name string) {
 		a.Dashboard.CurrentNamespace = ns
 	}
 	a.Dashboard.SetResource(resType)
-	// We could also select the row with the name... but Refresh() is async.
-	// For now, just switching the view is a huge step.
+	a.RefreshShortcuts()
 }

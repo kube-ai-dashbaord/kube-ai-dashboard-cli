@@ -16,12 +16,12 @@ const Logo = `
     Kubernetes AI Dashboard (k13s)
 `
 
-func NewHeader(context, cluster, user, k8sVersion, namespace string, aiStatus string) *tview.Flex {
+func NewHeader(context, cluster, user, k8sVersion, namespace string, aiStatus string, nsMap string, resource string) *tview.Flex {
 	infoTable := tview.NewTable().SetSelectable(false, false)
 	infoTable.SetBackgroundColor(tview.Styles.PrimitiveBackgroundColor)
 
-	sections := []string{"Context", "Cluster", "User", "K8s Rev", "Namespace"}
-	values := []string{context, cluster, user, k8sVersion, namespace}
+	sections := []string{"Context", "Cluster", "User", "K8s Rev", "Namespace", "Quick NS"}
+	values := []string{context, cluster, user, k8sVersion, namespace, nsMap}
 
 	for i, section := range sections {
 		infoTable.SetCell(i, 0, tview.NewTableCell(section+":").SetTextColor(tview.Styles.SecondaryTextColor))
@@ -45,10 +45,19 @@ func NewHeader(context, cluster, user, k8sVersion, namespace string, aiStatus st
 	}
 	statusView.SetText(statusText)
 
-	header := tview.NewFlex().
-		AddItem(infoTable, 0, 1, false).
-		AddItem(logoView, 0, 1, false).
-		AddItem(statusView, 0, 1, false)
+	breadcrumb := tview.NewTextView().
+		SetDynamicColors(true).
+		SetTextAlign(tview.AlignCenter)
+
+	breadcrumbText := fmt.Sprintf("[blue]%s [white]> [green]%s [white]> [yellow]%s", context, namespace, resource)
+	breadcrumb.SetText(breadcrumbText)
+
+	header := tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(tview.NewFlex().
+			AddItem(infoTable, 0, 1, false).
+			AddItem(logoView, 0, 1, false).
+			AddItem(statusView, 0, 1, false), 0, 1, false).
+		AddItem(breadcrumb, 1, 0, false)
 
 	return header
 }

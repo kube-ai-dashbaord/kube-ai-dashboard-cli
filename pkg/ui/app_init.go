@@ -17,9 +17,17 @@ import (
 
 func NewApp() *App {
 	cfg, _ := config.LoadConfig()
-	i18n.SetLanguage(cfg.Language)
+	return NewAppWithConfig(cfg)
+}
+
+func NewAppWithConfig(cfg *config.Config) *App {
 	aiClient, _ := ai.NewClient(&cfg.LLM)
 	k8sClient, _ := k8s.NewClient()
+	return InitApp(tview.NewApplication(), cfg, aiClient, k8sClient)
+}
+
+func InitApp(tviewApp *tview.Application, cfg *config.Config, aiClient *ai.Client, k8sClient *k8s.Client) *App {
+	i18n.SetLanguage(cfg.Language)
 
 	sessionManager, _ := sessions.NewSessionManager("memory")
 	agentFactory := func(ctx context.Context) (*agent.Agent, error) {
@@ -37,7 +45,7 @@ func NewApp() *App {
 	agentManager := agent.NewAgentManager(agentFactory, sessionManager)
 
 	a := &App{
-		Application:  tview.NewApplication(),
+		Application:  tviewApp,
 		Pages:        tview.NewPages(),
 		K8s:          k8sClient,
 		Config:       cfg,
@@ -45,12 +53,14 @@ func NewApp() *App {
 	}
 
 	ctx := context.Background()
-	sess, _ := sessionManager.NewSession(sessions.Metadata{
-		ModelID:    cfg.LLM.Model,
-		ProviderID: cfg.LLM.Provider,
-	})
-
-	ag, _ := agentManager.GetAgent(ctx, sess.ID)
+	var ag *agent.Agent
+	if aiClient != nil && aiClient.LLM != nil {
+		sess, _ := sessionManager.NewSession(sessions.Metadata{
+			ModelID:    cfg.LLM.Model,
+			ProviderID: cfg.LLM.Provider,
+		})
+		ag, _ = agentManager.GetAgent(ctx, sess.ID)
+	}
 	reporter := ai.NewReporter(cfg.ReportPath)
 
 	a.Assistant = NewAssistant(a.Application, ag, reporter)
@@ -91,6 +101,10 @@ func NewApp() *App {
 		a.Pages.SwitchToPage("main")
 	})
 
+	a.PulseViewer = NewPulseViewer(a.Application, k8sClient, func() {
+		a.Pages.SwitchToPage("main")
+	})
+
 	a.AuditViewer = NewAuditViewer(a.Application)
 
 	a.Dashboard = NewDashboard(a.Application, k8sClient, func(cmd string) {
@@ -106,6 +120,24 @@ func NewApp() *App {
 		a.Pages.AddPage("logs", a.LogViewer.View, true, true)
 		a.Pages.SwitchToPage("logs")
 	})
+
+	a.Dashboard.OnRefresh = func() {
+		a.Application.QueueUpdateDraw(func() {
+			newHeader := a.CreateHeader()
+			a.HeaderContainer.RemoveItem(a.Header)
+			a.HeaderContainer.AddItem(newHeader, 3, 0, false)
+			a.Header = newHeader
+			a.RefreshShortcuts()
+		})
+	}
+
+	a.Dashboard.OnExplainRequested = func(ns, name string) {
+		a.Application.SetFocus(a.Assistant.Input)
+		res := a.Dashboard.CurrentResource
+		prompt := fmt.Sprintf("Explain this %s %s in namespace %s in detail for a beginner.", res, name, ns)
+		a.Assistant.Input.SetText(prompt)
+		// We could auto-submit, but letting the user see the prompt is better for pedagogical value
+	}
 
 	a.initCallbacks(ag)
 	a.initPages()

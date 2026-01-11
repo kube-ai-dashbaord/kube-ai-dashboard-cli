@@ -41,8 +41,10 @@ type Dashboard struct {
 	OnRestart          func(namespace, name string)
 	OnPortForward      func(namespace, name string)
 	OnExplainRequested func(namespace, name string)
+	OnRefresh          func()
 	Filter             string
 	isRefreshing       atomic.Bool
+	QuickNamespaces    []string
 }
 
 func NewDashboard(app *tview.Application, k8sClient *k8s.Client, onSelected func(string), onSelectionChanged func(string), onLogs func(namespace, name string)) *Dashboard {
@@ -91,6 +93,12 @@ func NewDashboard(app *tview.Application, k8sClient *k8s.Client, onSelected func
 		// handle 0-9 for quick selection
 		if event.Rune() >= '0' && event.Rune() <= '9' {
 			idx := int(event.Rune() - '0')
+			if len(d.QuickNamespaces) > idx {
+				nsName := d.QuickNamespaces[idx]
+				d.CurrentNamespace = nsName
+				d.Refresh()
+				return nil
+			}
 			if idx+1 < d.Root.GetRowCount() {
 				if d.CurrentResource == "namespaces" || d.CurrentResource == "ns" {
 					// Quick-switch namespace and jump to pods
@@ -191,7 +199,7 @@ func NewDashboard(app *tview.Application, k8sClient *k8s.Client, onSelected func
 			return nil
 		}
 
-		if event.Rune() == 's' { // Scale
+		if event.Rune() == 'S' { // Scale (Shift-S)
 			row, _ := d.Root.GetSelection()
 			if row > 0 {
 				name := d.Root.GetCell(row, 1).Text
@@ -240,6 +248,17 @@ func NewDashboard(app *tview.Application, k8sClient *k8s.Client, onSelected func
 			}
 			return nil
 		}
+		if event.Rune() == 'h' { // Explain (AI)
+			row, _ := d.Root.GetSelection()
+			if row > 0 {
+				name := d.Root.GetCell(row, 1).Text
+				ns := d.CurrentNamespace
+				if d.OnExplainRequested != nil {
+					d.OnExplainRequested(ns, name)
+				}
+			}
+			return nil
+		}
 		return event
 	})
 
@@ -270,6 +289,8 @@ func (d *Dashboard) Refresh() {
 		var headers []string
 		var rows [][]resources.TableCell
 		var fetchErr error
+
+		d.UpdateQuickNamespaces(ctx)
 
 		switch d.CurrentResource {
 		case "pods", "po":
@@ -450,6 +471,9 @@ func (d *Dashboard) Refresh() {
 				}
 			}
 			d.Root.ScrollToBeginning()
+			if d.OnRefresh != nil {
+				d.OnRefresh()
+			}
 		})
 	}()
 }
@@ -475,4 +499,50 @@ func formatAge(dur time.Duration) string {
 	} else {
 		return fmt.Sprintf("%dm", int(dur.Minutes()))
 	}
+}
+func (d *Dashboard) UpdateQuickNamespaces(ctx context.Context) {
+	nss, err := d.K8s.ListNamespaces(ctx)
+	if err != nil {
+		d.QuickNamespaces = []string{""} // Fallback to all
+		return
+	}
+
+	// 0 is always "all"
+	mapping := []string{""}
+
+	// Try to find kube-system for 1
+	var kubeSystemFound bool
+	for _, ns := range nss {
+		if ns.Name == "kube-system" {
+			mapping = append(mapping, "kube-system")
+			kubeSystemFound = true
+			break
+		}
+	}
+
+	// Add other namespaces up to 9
+	count := len(mapping)
+	for _, ns := range nss {
+		if count >= 10 {
+			break
+		}
+		if ns.Name == "kube-system" && kubeSystemFound {
+			continue
+		}
+		mapping = append(mapping, ns.Name)
+		count++
+	}
+	d.QuickNamespaces = mapping
+}
+
+func (d *Dashboard) GetNamespaceMapping() string {
+	res := ""
+	for i, ns := range d.QuickNamespaces {
+		name := ns
+		if ns == "" {
+			name = "all"
+		}
+		res += fmt.Sprintf("[%d] %s  ", i, name)
+	}
+	return res
 }

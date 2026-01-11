@@ -472,6 +472,7 @@ func (c *Client) GetGVR(resource string) (schema.GroupVersionResource, bool) {
 		"namespaces":             {Group: "", Version: "v1", Resource: "namespaces"},
 		"ns":                     {Group: "", Version: "v1", Resource: "namespaces"},
 		"deploy":                 {Group: "apps", Version: "v1", Resource: "deployments"},
+		"deployments":            {Group: "apps", Version: "v1", Resource: "deployments"},
 		"statefulsets":           {Group: "apps", Version: "v1", Resource: "statefulsets"},
 		"sts":                    {Group: "apps", Version: "v1", Resource: "statefulsets"},
 		"daemonsets":             {Group: "apps", Version: "v1", Resource: "daemonsets"},

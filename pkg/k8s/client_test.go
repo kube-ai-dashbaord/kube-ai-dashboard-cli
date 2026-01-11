@@ -50,3 +50,32 @@ func TestListNodes(t *testing.T) {
 		t.Errorf("Expected 1 node, got %d", len(nodes))
 	}
 }
+func TestGetGVR(t *testing.T) {
+	client := &Client{}
+
+	cases := []struct {
+		res      string
+		expected string
+	}{
+		{"pods", "pods"},
+		{"po", "pods"},
+		{"services", "services"},
+		{"svc", "services"},
+		{"deployments", "deployments"},
+		{"deploy", "deployments"},
+		{"invalid", ""},
+	}
+
+	for _, c := range cases {
+		gvr, ok := client.GetGVR(c.res)
+		if c.expected == "" {
+			if ok {
+				t.Errorf("expected fail for %s, but got %v", c.res, gvr)
+			}
+		} else {
+			if !ok || gvr.Resource != c.expected {
+				t.Errorf("expected %s for %s, got %v", c.expected, c.res, gvr)
+			}
+		}
+	}
+}
