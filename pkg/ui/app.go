@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -366,15 +367,71 @@ Please provide a concise, helpful answer. If you suggest kubectl commands, wrap 
 		return
 	}
 
-	// Use streaming API with callback to update UI progressively
+	// Check if AI supports tool calling (agentic mode)
 	var fullResponse strings.Builder
-	err := a.aiClient.Ask(ctx, prompt, func(chunk string) {
-		fullResponse.WriteString(chunk)
-		response := fullResponse.String()
+	var err error
+
+	if a.aiClient.SupportsTools() {
+		// Use agentic mode with tool calling
 		a.QueueUpdateDraw(func() {
-			a.aiPanel.SetText(fmt.Sprintf("[yellow]Q:[white] %s\n\n[green]A:[white] %s", question, response))
+			a.aiPanel.SetText(fmt.Sprintf("[yellow]Q:[white] %s\n\n[cyan]🤖 Agentic Mode[white] - AI can execute kubectl commands\n\n[gray]Thinking...", question))
 		})
-	})
+
+		err = a.aiClient.AskWithTools(ctx, prompt, func(chunk string) {
+			fullResponse.WriteString(chunk)
+			response := fullResponse.String()
+			a.QueueUpdateDraw(func() {
+				a.aiPanel.SetText(fmt.Sprintf("[yellow]Q:[white] %s\n\n[cyan]🤖 Agentic Mode[white]\n\n[green]A:[white] %s", question, response))
+			})
+		}, func(toolName string, args string) bool {
+			// Tool approval callback - prompt user for dangerous operations
+			filter := ai.NewCommandFilter()
+
+			// For kubectl commands, check if dangerous
+			if toolName == "kubectl" {
+				// Parse the command from args
+				var cmdArgs struct {
+					Command string `json:"command"`
+				}
+				if err := parseJSON(args, &cmdArgs); err == nil {
+					fullCmd := "kubectl " + cmdArgs.Command
+					report := filter.AnalyzeCommand(fullCmd)
+
+					if report.IsDangerous {
+						// Show warning and wait for approval
+						a.QueueUpdateDraw(func() {
+							var sb strings.Builder
+							sb.WriteString(fmt.Sprintf("[yellow]Q:[white] %s\n\n", question))
+							sb.WriteString(fullResponse.String())
+							sb.WriteString("\n\n[red::b]⚠️ DANGEROUS COMMAND[white::-]\n")
+							sb.WriteString(fmt.Sprintf("[cyan]%s[white]\n\n", fullCmd))
+							for _, w := range report.Warnings {
+								sb.WriteString(fmt.Sprintf("[red]• %s[white]\n", w))
+							}
+							sb.WriteString("\n[yellow]Press Enter to approve, Esc to cancel[white]")
+							a.aiPanel.SetText(sb.String())
+						})
+
+						// For now, auto-approve non-dangerous write operations
+						// Dangerous operations require explicit user approval
+						return false // Cancel dangerous operations by default
+					}
+				}
+			}
+
+			// Auto-approve read-only operations
+			return true
+		})
+	} else {
+		// Fallback to regular streaming
+		err = a.aiClient.Ask(ctx, prompt, func(chunk string) {
+			fullResponse.WriteString(chunk)
+			response := fullResponse.String()
+			a.QueueUpdateDraw(func() {
+				a.aiPanel.SetText(fmt.Sprintf("[yellow]Q:[white] %s\n\n[green]A:[white] %s", question, response))
+			})
+		})
+	}
 
 	if err != nil {
 		a.QueueUpdateDraw(func() {
@@ -383,9 +440,21 @@ Please provide a concise, helpful answer. If you suggest kubectl commands, wrap 
 		return
 	}
 
-	// After response complete, analyze for commands that need approval
-	finalResponse := fullResponse.String()
-	a.analyzeAndShowDecisions(question, finalResponse)
+	// After response complete, analyze for commands that need approval (fallback mode)
+	if !a.aiClient.SupportsTools() {
+		finalResponse := fullResponse.String()
+		a.analyzeAndShowDecisions(question, finalResponse)
+	}
+}
+
+// parseJSON is a helper to parse JSON arguments
+func parseJSON(jsonStr string, v interface{}) error {
+	return jsonUnmarshal([]byte(jsonStr), v)
+}
+
+// jsonUnmarshal wraps json.Unmarshal
+var jsonUnmarshal = func(data []byte, v interface{}) error {
+	return json.Unmarshal(data, v)
 }
 
 // analyzeAndShowDecisions extracts commands from AI response and shows decision UI

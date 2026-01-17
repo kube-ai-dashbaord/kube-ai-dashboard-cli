@@ -25,10 +25,59 @@ type Provider interface {
 	ListModels(ctx context.Context) ([]string, error)
 }
 
+// ToolProvider extends Provider with tool/function calling support
+type ToolProvider interface {
+	Provider
+
+	// AskWithTools sends a prompt with tools and handles tool calls
+	// The toolCallback is called for each tool call, allowing the caller to execute tools
+	// Returns the final response after all tool calls are resolved
+	AskWithTools(ctx context.Context, prompt string, tools []ToolDefinition, callback func(string), toolCallback ToolCallback) error
+}
+
+// ToolDefinition represents a tool that can be called by the LLM
+type ToolDefinition struct {
+	Type     string       `json:"type"` // "function"
+	Function FunctionDef  `json:"function"`
+}
+
+// FunctionDef defines a function that can be called
+type FunctionDef struct {
+	Name        string                 `json:"name"`
+	Description string                 `json:"description"`
+	Parameters  map[string]interface{} `json:"parameters"`
+}
+
+// ToolCall represents a tool invocation from the LLM
+type ToolCall struct {
+	ID       string       `json:"id"`
+	Type     string       `json:"type"` // "function"
+	Function FunctionCall `json:"function"`
+}
+
+// FunctionCall contains the function name and arguments
+type FunctionCall struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+// ToolResult represents the result of executing a tool
+type ToolResult struct {
+	ToolCallID string `json:"tool_call_id"`
+	Content    string `json:"content"`
+	IsError    bool   `json:"-"`
+}
+
+// ToolCallback is called when the LLM wants to execute a tool
+// It should execute the tool and return the result
+type ToolCallback func(call ToolCall) ToolResult
+
 // ChatMessage represents a message in a conversation
 type ChatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string     `json:"role"`
+	Content    string     `json:"content,omitempty"`
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string     `json:"tool_call_id,omitempty"`
 }
 
 // ProviderConfig holds common configuration for all providers

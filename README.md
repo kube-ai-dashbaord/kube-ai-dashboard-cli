@@ -27,7 +27,8 @@
 - **Settings Management**: Configure LLM providers, language, and application settings
 
 ### Agentic AI Assistant
-- **100% kubectl-ai Parity**: Full agentic loop with tool-use (Kubectl, Bash, MCP)
+- **100% kubectl-ai Parity**: Full agentic loop with tool-use (Kubectl, Bash)
+- **MCP Tool Execution**: AI directly executes kubectl commands with automatic tool calling
 - **Deep Synergy**: AI analysis with full context (YAML + Events + Logs)
 - **Pedagogical Education**: **Beginner Mode** provides simple explanations for complex resources
 - **Safety First**: AI-proposed modifications require explicit user approval
@@ -35,6 +36,7 @@
   - Commands categorized as Read-only, Write, Dangerous, or Interactive
   - Warnings displayed for dangerous operations (delete --all, force, etc.)
   - Press 1-9 to execute specific commands, A for all, Esc to cancel
+- **Agentic Mode**: When using OpenAI-compatible providers with tool support, AI can directly query and modify cluster resources
 
 ### Global & Accessible
 - **Full i18n**: Native support for **English**, **Korean**, **Chinese**, and **Japanese**
@@ -46,9 +48,59 @@
 
 ### Installation
 
+**Quick Install (Current Platform):**
 ```bash
 # Build from source
+make build
+
+# Or directly with go
 go build -o k13s ./cmd/kube-ai-dashboard-cli/main.go
+```
+
+**Cross-Platform Builds:**
+```bash
+# Build for all platforms (Linux, macOS, Windows)
+make build-all
+
+# Build for specific platforms
+make build-linux    # linux/amd64, linux/arm64, linux/arm
+make build-darwin   # darwin/amd64, darwin/arm64
+make build-windows  # windows/amd64
+
+# Create release packages with checksums
+make package
+```
+
+**Supported Architectures:**
+| Platform | Architecture | Binary |
+|----------|-------------|--------|
+| Linux | amd64 | `k13s-linux-amd64` |
+| Linux | arm64 | `k13s-linux-arm64` |
+| Linux | arm | `k13s-linux-arm` |
+| macOS | amd64 (Intel) | `k13s-darwin-amd64` |
+| macOS | arm64 (Apple Silicon) | `k13s-darwin-arm64` |
+| Windows | amd64 | `k13s-windows-amd64.exe` |
+
+### Air-Gapped / Offline Installation
+
+For environments without internet access:
+
+```bash
+# On a machine with internet access:
+# 1. Create offline bundle with vendored dependencies
+make bundle-offline
+
+# 2. Transfer the bundle to air-gapped environment
+scp dist/k13s-offline-bundle-*.tar.gz user@airgapped-host:~/
+
+# On the air-gapped machine:
+# 3. Extract and build
+tar -xzvf k13s-offline-bundle-*.tar.gz
+cd offline-bundle
+make build-offline
+
+# Or build directly with go
+go build -mod=vendor -o k13s ./cmd/kube-ai-dashboard-cli/main.go
 ```
 
 ### Docker
@@ -140,10 +192,19 @@ log_level: debug
 ```
 
 ### Supported LLM Providers
-- **OpenAI**: GPT-4, GPT-3.5
-- **Ollama**: Local models (llama2, codellama, etc.)
-- **Anthropic**: Claude models
-- **Any OpenAI-compatible API**
+
+| Provider | Tool Calling | Notes |
+|----------|-------------|-------|
+| **OpenAI** | ✅ Yes | GPT-4, GPT-4o, GPT-3.5-turbo (Full agentic mode) |
+| **Ollama** | ⚠️ Model-dependent | llama3.1, mistral-nemo support tools |
+| **Azure OpenAI** | ✅ Yes | Enterprise deployment with tool support |
+| **Anthropic** | ⚠️ Partial | Claude models (via API adapter) |
+| **Local LLMs** | ⚠️ Varies | Any OpenAI-compatible API |
+
+**For Air-Gapped Environments:**
+- Use **Ollama** with local models (no internet required after model download)
+- Configure endpoint to local server: `endpoint: http://localhost:11434/v1`
+- Recommended models: `llama3.1:8b`, `mistral-nemo`, `codellama`
 
 ### LDAP Configuration (Optional)
 
@@ -178,19 +239,24 @@ k13s/
 ├── cmd/
 │   └── kube-ai-dashboard-cli/   # Main entry point
 ├── pkg/
-│   ├── ai/         # AI client (OpenAI-compatible)
-│   ├── config/     # Configuration management
-│   ├── db/         # SQLite database for audit logs
-│   ├── i18n/       # Internationalization
-│   ├── k8s/        # Kubernetes client wrapper
-│   ├── ui/         # TUI components (tview)
-│   └── web/        # Web server and API handlers
+│   ├── ai/              # AI client (OpenAI-compatible)
+│   │   ├── tools/       # MCP tool definitions (kubectl, bash)
+│   │   ├── providers/   # LLM provider implementations
+│   │   └── sessions/    # Conversation history
+│   ├── config/          # Configuration management
+│   ├── db/              # SQLite database for audit logs
+│   ├── i18n/            # Internationalization
+│   ├── k8s/             # Kubernetes client wrapper
+│   ├── ui/              # TUI components (tview)
+│   └── web/             # Web server and API handlers
 │       ├── auth.go      # Authentication system
 │       ├── ldap.go      # LDAP/SSO integration
 │       ├── reports.go   # Report generation
 │       ├── server.go    # HTTP server
 │       └── static/      # Frontend assets
-└── docs/           # Documentation
+├── dist/                # Cross-compiled binaries
+├── Makefile             # Build automation
+└── docs/                # Documentation
 ```
 
 ---
@@ -219,8 +285,25 @@ k13s/
 ## Documentation
 
 - [User Guide](docs/USER_GUIDE.md) - Navigation and shortcuts
+- [Documentation Website](docs/website/index.html) - Comprehensive online docs
 - [Contributing Guide](CONTRIBUTING.md) - How to contribute
 - [Support Policy](SUPPORT.md) - Getting help
+
+## Makefile Targets
+
+| Target | Description |
+|--------|-------------|
+| `make build` | Build for current platform |
+| `make build-all` | Build for all platforms |
+| `make build-linux` | Build for Linux (amd64, arm64, arm) |
+| `make build-darwin` | Build for macOS (amd64, arm64) |
+| `make build-windows` | Build for Windows (amd64) |
+| `make package` | Create release packages with checksums |
+| `make bundle-offline` | Create offline bundle with vendored deps |
+| `make docker` | Build Docker image |
+| `make docker-multiarch` | Build multi-arch Docker image |
+| `make test` | Run tests |
+| `make clean` | Clean build artifacts |
 
 ---
 
