@@ -1293,3 +1293,63 @@ func (c *Client) ListDynamicResource(ctx context.Context, gvr schema.GroupVersio
 	}
 	return results, nil
 }
+
+// ==========================================
+// Port Forwarding
+// ==========================================
+
+// StartPortForward starts port forwarding to a pod
+func (c *Client) StartPortForward(namespace, podName string, localPort, remotePort int, stopChan chan struct{}) error {
+	// Get the pod to verify it exists
+	_, err := c.Clientset.CoreV1().Pods(namespace).Get(context.Background(), podName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to get pod: %w", err)
+	}
+
+	// Create the URL for the pod exec endpoint
+	req := c.Clientset.CoreV1().RESTClient().Post().
+		Resource("pods").
+		Namespace(namespace).
+		Name(podName).
+		SubResource("portforward")
+
+	transport, upgrader, err := spdy.RoundTripperFor(c.Config)
+	if err != nil {
+		return fmt.Errorf("failed to create round tripper: %w", err)
+	}
+
+	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, http.MethodPost, req.URL())
+
+	ports := []string{fmt.Sprintf("%d:%d", localPort, remotePort)}
+	readyChan := make(chan struct{})
+	errChan := make(chan error)
+
+	fw, err := portforward.New(dialer, ports, stopChan, readyChan, nil, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create port forwarder: %w", err)
+	}
+
+	go func() {
+		errChan <- fw.ForwardPorts()
+	}()
+
+	select {
+	case <-readyChan:
+		fmt.Printf("Port forwarding is ready: localhost:%d -> %s/%s:%d\n", localPort, namespace, podName, remotePort)
+	case err := <-errChan:
+		return fmt.Errorf("port forwarding failed: %w", err)
+	case <-stopChan:
+		return nil
+	}
+
+	// Wait for stop signal or error
+	select {
+	case err := <-errChan:
+		if err != nil {
+			return fmt.Errorf("port forwarding error: %w", err)
+		}
+	case <-stopChan:
+	}
+
+	return nil
+}

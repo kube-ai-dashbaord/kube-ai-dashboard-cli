@@ -1,8 +1,6 @@
 module github.com/kube-ai-dashbaord/kube-ai-dashboard-cli
 
-go 1.25.0
-
-replace github.com/GoogleCloudPlatform/kubectl-ai/gollm => /Users/youngjukim/Desktop/kubectl-ai/gollm
+go 1.24
 
 require (
 	github.com/adrg/xdg v0.5.3

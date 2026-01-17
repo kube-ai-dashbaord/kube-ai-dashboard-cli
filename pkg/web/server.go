@@ -29,6 +29,20 @@ type Server struct {
 	reportGenerator *ReportGenerator
 	port            int
 	server          *http.Server
+
+	// Tool approval management
+	pendingApprovals     map[string]*PendingToolApproval
+	pendingApprovalMutex sync.RWMutex
+}
+
+// PendingToolApproval represents a tool call waiting for user approval
+type PendingToolApproval struct {
+	ID        string    `json:"id"`
+	ToolName  string    `json:"tool_name"`
+	Command   string    `json:"command"`
+	Category  string    `json:"category"` // read-only, write, dangerous
+	Timestamp time.Time `json:"timestamp"`
+	Response  chan bool `json:"-"`
 }
 
 type ChatRequest struct {
@@ -101,6 +115,7 @@ func NewServer(cfg *config.Config, port int) (*Server, error) {
 	// Initialize auth manager
 	authConfig := &AuthConfig{
 		Enabled:         cfg.EnableAudit, // Use audit flag to control auth for now
+		AuthMode:        "local",         // Use local authentication
 		SessionDuration: 24 * time.Hour,
 		DefaultAdmin:    "admin",
 		DefaultPassword: "admin123",
@@ -109,11 +124,12 @@ func NewServer(cfg *config.Config, port int) (*Server, error) {
 	fmt.Printf("  Authentication: %s\n", map[bool]string{true: "Enabled", false: "Disabled"}[authConfig.Enabled])
 
 	server := &Server{
-		cfg:         cfg,
-		aiClient:    aiClient,
-		k8sClient:   k8sClient,
-		authManager: authManager,
-		port:        port,
+		cfg:              cfg,
+		aiClient:         aiClient,
+		k8sClient:        k8sClient,
+		authManager:      authManager,
+		port:             port,
+		pendingApprovals: make(map[string]*PendingToolApproval),
 	}
 
 	server.reportGenerator = NewReportGenerator(server)
@@ -134,6 +150,8 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/auth/me", s.authManager.AuthMiddleware(s.authManager.HandleCurrentUser))
 	mux.HandleFunc("/api/chat", s.authManager.AuthMiddleware(s.handleChat))
 	mux.HandleFunc("/api/chat/stream", s.authManager.AuthMiddleware(s.handleChatStream))
+	mux.HandleFunc("/api/chat/agentic", s.authManager.AuthMiddleware(s.handleAgenticChat))
+	mux.HandleFunc("/api/tool/approve", s.authManager.AuthMiddleware(s.handleToolApprove))
 	mux.HandleFunc("/api/k8s/", s.authManager.AuthMiddleware(s.handleK8sResource))
 	mux.HandleFunc("/api/audit", s.authManager.AuthMiddleware(s.handleAuditLogs))
 	mux.HandleFunc("/api/reports", s.authManager.AuthMiddleware(s.reportGenerator.HandleReports))
@@ -143,6 +161,15 @@ func (s *Server) Start() error {
 	// WebSocket terminal handler
 	terminalHandler := NewTerminalHandler(s.k8sClient)
 	mux.HandleFunc("/api/terminal/", s.authManager.AuthMiddleware(terminalHandler.HandleTerminal))
+
+	// Metrics endpoints
+	mux.HandleFunc("/api/metrics/pods", s.authManager.AuthMiddleware(s.handlePodMetrics))
+	mux.HandleFunc("/api/metrics/nodes", s.authManager.AuthMiddleware(s.handleNodeMetrics))
+
+	// Port forwarding endpoints
+	mux.HandleFunc("/api/portforward/start", s.authManager.AuthMiddleware(s.handlePortForwardStart))
+	mux.HandleFunc("/api/portforward/list", s.authManager.AuthMiddleware(s.handlePortForwardList))
+	mux.HandleFunc("/api/portforward/", s.authManager.AuthMiddleware(s.handlePortForwardStop))
 
 	// Static files
 	staticFS, err := fs.Sub(staticFiles, "static")
@@ -688,4 +715,449 @@ func getNodeRoles(node *corev1.Node) string {
 		return "<none>"
 	}
 	return strings.Join(roles, ", ")
+}
+
+// classifyCommand categorizes a kubectl command for safety
+func classifyCommand(command string) string {
+	command = strings.ToLower(command)
+
+	// Dangerous commands
+	dangerousPatterns := []string{
+		"delete", "--force", "--grace-period=0", "drain", "cordon",
+		"taint", "--all", "replace --force", "rollout undo",
+	}
+	for _, pattern := range dangerousPatterns {
+		if strings.Contains(command, pattern) {
+			return "dangerous"
+		}
+	}
+
+	// Write commands
+	writePatterns := []string{
+		"create", "apply", "patch", "edit", "scale", "set",
+		"label", "annotate", "expose", "run", "exec", "cp",
+		"rollout restart", "rollout pause", "rollout resume",
+	}
+	for _, pattern := range writePatterns {
+		if strings.Contains(command, pattern) {
+			return "write"
+		}
+	}
+
+	// Read-only commands
+	return "read-only"
+}
+
+// handleAgenticChat handles AI chat with tool calling (Decision Required flow)
+func (s *Server) handleAgenticChat(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req ChatRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	username := r.Header.Get("X-Username")
+	if username == "" {
+		username = "anonymous"
+	}
+
+	// Record audit log
+	db.RecordAudit(db.AuditEntry{
+		User:       username,
+		Action:     "ai_agentic_query",
+		Resource:   "chat",
+		Details:    fmt.Sprintf("Query: %s", truncateString(req.Message, 100)),
+		LLMRequest: req.Message,
+	})
+
+	if s.aiClient == nil {
+		http.Error(w, "AI client not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Check if provider supports tool calling
+	if !s.aiClient.SupportsTools() {
+		http.Error(w, "AI provider does not support tool calling", http.StatusBadRequest)
+		return
+	}
+
+	// Set up SSE
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	sse := &SSEWriter{w: w, flusher: flusher}
+
+	// Tool approval callback
+	toolApprovalCallback := func(toolName string, argsJSON string) bool {
+		// Parse arguments to get the command
+		var args map[string]interface{}
+		json.Unmarshal([]byte(argsJSON), &args)
+
+		command := ""
+		if cmd, ok := args["command"].(string); ok {
+			command = cmd
+		}
+
+		// Classify the command
+		category := classifyCommand(command)
+
+		// Auto-approve read-only commands
+		if category == "read-only" {
+			return true
+		}
+
+		// Create pending approval
+		approvalID := fmt.Sprintf("approval_%d", time.Now().UnixNano())
+		approval := &PendingToolApproval{
+			ID:        approvalID,
+			ToolName:  toolName,
+			Command:   command,
+			Category:  category,
+			Timestamp: time.Now(),
+			Response:  make(chan bool, 1),
+		}
+
+		s.pendingApprovalMutex.Lock()
+		s.pendingApprovals[approvalID] = approval
+		s.pendingApprovalMutex.Unlock()
+
+		// Send approval request via SSE
+		approvalJSON, _ := json.Marshal(map[string]interface{}{
+			"type":      "approval_required",
+			"id":        approvalID,
+			"tool_name": toolName,
+			"command":   command,
+			"category":  category,
+		})
+		sse.WriteEvent("approval", string(approvalJSON))
+
+		// Wait for approval with timeout
+		select {
+		case approved := <-approval.Response:
+			// Cleanup
+			s.pendingApprovalMutex.Lock()
+			delete(s.pendingApprovals, approvalID)
+			s.pendingApprovalMutex.Unlock()
+
+			if approved {
+				// Log the approved action
+				db.RecordAudit(db.AuditEntry{
+					User:     username,
+					Action:   "tool_approved",
+					Resource: toolName,
+					Details:  fmt.Sprintf("Command: %s", command),
+				})
+			}
+			return approved
+
+		case <-time.After(60 * time.Second):
+			// Timeout - cleanup and reject
+			s.pendingApprovalMutex.Lock()
+			delete(s.pendingApprovals, approvalID)
+			s.pendingApprovalMutex.Unlock()
+
+			sse.WriteEvent("approval_timeout", approvalID)
+			return false
+
+		case <-r.Context().Done():
+			// Request cancelled
+			s.pendingApprovalMutex.Lock()
+			delete(s.pendingApprovals, approvalID)
+			s.pendingApprovalMutex.Unlock()
+			return false
+		}
+	}
+
+	// Run agentic chat
+	err := s.aiClient.AskWithTools(r.Context(), req.Message, func(text string) {
+		escaped := strings.ReplaceAll(text, "\n", "\\n")
+		sse.Write(escaped)
+	}, toolApprovalCallback)
+
+	if err != nil {
+		sse.Write(fmt.Sprintf("[ERROR] %s", err.Error()))
+	}
+
+	sse.Write("[DONE]")
+}
+
+// handleToolApprove handles user approval/rejection of tool calls
+func (s *Server) handleToolApprove(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		ID       string `json:"id"`
+		Approved bool   `json:"approved"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	s.pendingApprovalMutex.RLock()
+	approval, exists := s.pendingApprovals[req.ID]
+	s.pendingApprovalMutex.RUnlock()
+
+	if !exists {
+		http.Error(w, "Approval not found or expired", http.StatusNotFound)
+		return
+	}
+
+	// Send response (non-blocking)
+	select {
+	case approval.Response <- req.Approved:
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	default:
+		http.Error(w, "Approval already processed", http.StatusConflict)
+	}
+}
+
+// SSEWriter helper for writing SSE events
+func (sse *SSEWriter) WriteEvent(event string, data string) {
+	fmt.Fprintf(sse.w, "event: %s\ndata: %s\n\n", event, data)
+	sse.flusher.Flush()
+}
+
+// ==========================================
+// Metrics Handlers
+// ==========================================
+
+// PodMetricItem represents pod resource usage for API response
+type PodMetricItem struct {
+	Name      string  `json:"name"`
+	Namespace string  `json:"namespace"`
+	CPU       float64 `json:"cpu"`    // millicores
+	Memory    float64 `json:"memory"` // MiB
+}
+
+func (s *Server) handlePodMetrics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	namespace := r.URL.Query().Get("namespace")
+	w.Header().Set("Content-Type", "application/json")
+
+	// Try to get metrics from metrics-server
+	metricsMap, err := s.k8sClient.GetPodMetrics(r.Context(), namespace)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "Metrics server not available: " + err.Error(),
+			"items": []PodMetricItem{},
+		})
+		return
+	}
+
+	// Convert map to slice
+	var items []PodMetricItem
+	for name, values := range metricsMap {
+		if len(values) >= 2 {
+			items = append(items, PodMetricItem{
+				Name:      name,
+				Namespace: namespace,
+				CPU:       float64(values[0]),
+				Memory:    float64(values[1]),
+			})
+		}
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"items": items,
+	})
+}
+
+func (s *Server) handleNodeMetrics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	metricsMap, err := s.k8sClient.GetNodeMetrics(r.Context())
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "Metrics server not available: " + err.Error(),
+			"items": []interface{}{},
+		})
+		return
+	}
+
+	// Convert map to slice
+	var items []map[string]interface{}
+	for name, values := range metricsMap {
+		if len(values) >= 2 {
+			items = append(items, map[string]interface{}{
+				"name":   name,
+				"cpu":    values[0],
+				"memory": values[1],
+			})
+		}
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"items": items,
+	})
+}
+
+// ==========================================
+// Port Forwarding Handlers
+// ==========================================
+
+// PortForwardSession represents an active port forward
+type PortForwardSession struct {
+	ID         string    `json:"id"`
+	Namespace  string    `json:"namespace"`
+	Pod        string    `json:"pod"`
+	LocalPort  int       `json:"localPort"`
+	RemotePort int       `json:"remotePort"`
+	Active     bool      `json:"active"`
+	StartedAt  time.Time `json:"startedAt"`
+	stopChan   chan struct{}
+}
+
+var (
+	portForwardSessions = make(map[string]*PortForwardSession)
+	pfMutex             sync.Mutex
+)
+
+func (s *Server) handlePortForwardStart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Namespace  string `json:"namespace"`
+		Pod        string `json:"pod"`
+		LocalPort  int    `json:"localPort"`
+		RemotePort int    `json:"remotePort"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Generate session ID
+	sessionID := fmt.Sprintf("pf-%d", time.Now().UnixNano())
+
+	session := &PortForwardSession{
+		ID:         sessionID,
+		Namespace:  req.Namespace,
+		Pod:        req.Pod,
+		LocalPort:  req.LocalPort,
+		RemotePort: req.RemotePort,
+		Active:     true,
+		StartedAt:  time.Now(),
+		stopChan:   make(chan struct{}),
+	}
+
+	// Start port forward in goroutine
+	go func() {
+		err := s.k8sClient.StartPortForward(
+			req.Namespace,
+			req.Pod,
+			req.LocalPort,
+			req.RemotePort,
+			session.stopChan,
+		)
+		if err != nil {
+			fmt.Printf("Port forward error: %v\n", err)
+		}
+		pfMutex.Lock()
+		if s, ok := portForwardSessions[sessionID]; ok {
+			s.Active = false
+		}
+		pfMutex.Unlock()
+	}()
+
+	pfMutex.Lock()
+	portForwardSessions[sessionID] = session
+	pfMutex.Unlock()
+
+	// Record audit
+	username := r.Header.Get("X-Username")
+	db.RecordAudit(db.AuditEntry{
+		User:     username,
+		Action:   "port_forward_start",
+		Resource: "pod",
+		Details:  fmt.Sprintf("%s/%s local:%d remote:%d", req.Namespace, req.Pod, req.LocalPort, req.RemotePort),
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(session)
+}
+
+func (s *Server) handlePortForwardList(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	pfMutex.Lock()
+	sessions := make([]*PortForwardSession, 0, len(portForwardSessions))
+	for _, s := range portForwardSessions {
+		sessions = append(sessions, s)
+	}
+	pfMutex.Unlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"items": sessions,
+	})
+}
+
+func (s *Server) handlePortForwardStop(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Extract session ID from path
+	path := strings.TrimPrefix(r.URL.Path, "/api/portforward/")
+	sessionID := strings.TrimSuffix(path, "/")
+
+	pfMutex.Lock()
+	session, ok := portForwardSessions[sessionID]
+	if !ok {
+		pfMutex.Unlock()
+		http.Error(w, "Session not found", http.StatusNotFound)
+		return
+	}
+
+	// Stop the port forward
+	close(session.stopChan)
+	delete(portForwardSessions, sessionID)
+	pfMutex.Unlock()
+
+	// Record audit
+	username := r.Header.Get("X-Username")
+	db.RecordAudit(db.AuditEntry{
+		User:     username,
+		Action:   "port_forward_stop",
+		Resource: "pod",
+		Details:  fmt.Sprintf("%s/%s", session.Namespace, session.Pod),
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "stopped"})
 }

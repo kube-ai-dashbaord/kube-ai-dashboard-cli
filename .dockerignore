@@ -9,8 +9,8 @@
 *.swo
 *~
 
-# Build artifacts
-k13s
+# Build artifacts (keep k13s for Dockerfile.prebuilt)
+# k13s  # Needed for prebuilt Docker image
 k13s-eval
 *.exe
 *.out

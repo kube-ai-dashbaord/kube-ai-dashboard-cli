@@ -1,0 +1,43 @@
+# Dockerfile for pre-built binary
+# Use this when you have already built the binary locally
+#
+# Usage:
+#   1. Build binary locally: go build -o k13s ./cmd/kube-ai-dashboard-cli/main.go
+#   2. Build Docker image: docker build -f Dockerfile.prebuilt -t k13s:latest .
+
+FROM alpine:3.19
+
+# Install runtime dependencies
+RUN apk add --no-cache ca-certificates tzdata curl
+
+# Create non-root user
+RUN adduser -D -g '' k13s
+
+# Copy pre-built binary (build locally first)
+COPY k13s /usr/local/bin/k13s
+RUN chmod +x /usr/local/bin/k13s
+
+# Create config and kubeconfig directories
+RUN mkdir -p /home/k13s/.config/k13s /home/k13s/.kube && \
+    chown -R k13s:k13s /home/k13s
+
+# Switch to non-root user
+USER k13s
+WORKDIR /home/k13s
+
+# Environment variables for configuration
+ENV K13S_PORT=8080 \
+    K13S_AUTH_MODE=local \
+    K13S_USERNAME=admin \
+    K13S_PASSWORD=admin
+
+# Expose web UI port
+EXPOSE 8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -sf http://localhost:${K13S_PORT}/api/health || exit 1
+
+# Default command: run in web mode
+ENTRYPOINT ["/usr/local/bin/k13s"]
+CMD ["-web", "-port", "8080"]

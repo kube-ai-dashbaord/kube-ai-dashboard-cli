@@ -24,8 +24,13 @@
 - **Authentication System**: Session-based authentication with user management
 - **LDAP/SSO Support**: Enterprise authentication with group-based role mapping
 - **Audit Logging**: Track all actions and AI interactions in SQLite database
-- **Reports Generation**: Cluster health, resource usage, security audit, and AI interaction reports
+- **Reports Generation**: LLM-powered comprehensive cluster analysis with PDF/CSV download
 - **Settings Management**: Configure LLM providers, streaming, auto-refresh, and language settings
+- **Pod Terminal**: Interactive xterm.js terminal directly in browser (WebSocket exec)
+- **Log Viewer**: Real-time log streaming with search, filtering, and ANSI color support
+- **Metrics Charts**: CPU/Memory usage graphs with Chart.js, top consumers list
+- **Port Forwarding**: Start/stop port forwards through UI with status tracking
+- **AI-Dashboard Integration**: AI commands can navigate, highlight resources, and open modals
 
 ### Agentic AI Assistant
 - **100% kubectl-ai Parity**: Full agentic loop with tool-use (Kubectl, Bash)
@@ -106,18 +111,80 @@ go build -mod=vendor -o k13s ./cmd/kube-ai-dashboard-cli/main.go
 
 ### Docker
 
+k13s provides Docker images for easy deployment in any environment, including air-gapped networks.
+
+**Quick Start:**
 ```bash
-# Build Docker image
+# Run with Docker (mount your kubeconfig)
+docker run -d -p 8080:8080 \
+  -v ~/.kube/config:/home/k13s/.kube/config:ro \
+  -e K13S_AUTH_MODE=local \
+  -e K13S_USERNAME=admin \
+  -e K13S_PASSWORD=admin \
+  youngjukim/k13s:latest
+
+# Access at http://localhost:8080
+```
+
+**Build from Source:**
+```bash
+# Standard build (requires Go 1.25+)
 docker build -t k13s:latest .
 
-# Run with Docker
-docker run -d -p 8080:8080 \
-  -v ~/.kube:/home/k13s/.kube:ro \
-  k13s:latest
-
-# Or use Docker Compose
-docker-compose up -d
+# Build with pre-compiled binary (recommended)
+go build -o k13s ./cmd/kube-ai-dashboard-cli/main.go
+docker build -f Dockerfile.prebuilt -t k13s:latest .
 ```
+
+**Using Docker Compose:**
+```bash
+# Basic usage
+docker-compose up -d
+
+# With custom password
+K13S_PASSWORD=mysecret docker-compose up -d
+
+# With OpenAI
+K13S_LLM_PROVIDER=openai K13S_LLM_API_KEY=sk-xxx docker-compose up -d
+
+# With local Ollama (air-gapped)
+docker-compose --profile with-ollama up -d
+```
+
+**Kubernetes Deployment:**
+```bash
+# Deploy to Kubernetes cluster
+kubectl apply -f kubernetes/deployment.yaml
+
+# Access via port-forward
+kubectl port-forward -n k13s svc/k13s 8080:80
+```
+
+**Environment Variables:**
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `K13S_PORT` | 8080 | Web server port |
+| `K13S_AUTH_MODE` | local | Authentication mode (local/token) |
+| `K13S_USERNAME` | admin | Login username |
+| `K13S_PASSWORD` | admin | Login password |
+| `K13S_LLM_PROVIDER` | - | LLM provider (openai/ollama) |
+| `K13S_LLM_MODEL` | - | LLM model name |
+| `K13S_LLM_ENDPOINT` | - | LLM API endpoint |
+| `K13S_LLM_API_KEY` | - | LLM API key |
+| `KUBECONFIG` | - | Path to kubeconfig file |
+
+**Air-Gapped Deployment:**
+
+For environments without internet access:
+1. Build the image on a connected machine: `docker build -f Dockerfile.prebuilt -t k13s:latest .`
+2. Save the image: `docker save k13s:latest | gzip > k13s-image.tar.gz`
+3. Transfer to air-gapped environment
+4. Load the image: `docker load < k13s-image.tar.gz`
+5. Run with local Ollama for AI features (optional):
+   ```bash
+   docker-compose --profile with-ollama up -d
+   docker exec -it k13s-ollama ollama pull llama3.2
+   ```
 
 ### TUI Mode (Default)
 
