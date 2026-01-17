@@ -7,10 +7,10 @@
 ```
 ~/.config/k13s/
 ├── config.yaml       # Main configuration
-├── hotkeys.yaml      # Custom hotkey bindings (future)
-├── plugins.yaml      # External plugins (future)
+├── hotkeys.yaml      # Custom hotkey bindings
+├── plugins.yaml      # External plugins
 └── skins/
-    └── default.yaml  # Theme customization (future)
+    └── default.yaml  # Theme customization
 ```
 
 ## Configuration File Path
@@ -118,3 +118,184 @@ Delete the config file to reset:
 ```bash
 rm ~/.config/k13s/config.yaml
 ```
+
+---
+
+## Custom Hotkeys (hotkeys.yaml)
+
+Define custom keyboard shortcuts that trigger external commands.
+
+### Example hotkeys.yaml
+
+```yaml
+hotkeys:
+  stern-logs:
+    shortCut: Shift-L
+    description: "Stern multi-pod logs"
+    scopes: [pods, deployments]
+    command: stern
+    args: [-n, $NAMESPACE, $NAME]
+    dangerous: false
+
+  port-forward-8080:
+    shortCut: Ctrl-P
+    description: "Port forward to 8080"
+    scopes: [pods, services]
+    command: kubectl
+    args: [port-forward, -n, $NAMESPACE, $NAME, "8080:8080"]
+
+  open-grafana:
+    shortCut: Ctrl-G
+    description: "Open Grafana dashboard"
+    scopes: ["*"]  # All resources
+    command: open
+    args: ["https://grafana.example.com/d/k8s/$NAME"]
+```
+
+### Hotkey Variables
+
+| Variable | Description |
+|----------|-------------|
+| `$NAMESPACE` | Current resource namespace |
+| `$NAME` | Selected resource name |
+| `$CONTEXT` | Current Kubernetes context |
+
+### Hotkey Options
+
+| Key | Description | Required |
+|-----|-------------|----------|
+| `shortCut` | Key combination (e.g., `Shift-L`, `Ctrl-K`) | Yes |
+| `description` | Human-readable description | Yes |
+| `scopes` | Resource types (`pods`, `deployments`, `*` for all) | Yes |
+| `command` | Command to execute | Yes |
+| `args` | Command arguments | No |
+| `dangerous` | Require confirmation before execution | No |
+
+---
+
+## Plugins (plugins.yaml)
+
+Extend k13s with external tools and commands.
+
+### Example plugins.yaml
+
+```yaml
+plugins:
+  dive:
+    shortCut: Ctrl-I
+    description: "Dive into container image layers"
+    scopes: [pods]
+    command: dive
+    args: [$IMAGE]
+    background: false
+    confirm: false
+
+  debug:
+    shortCut: Shift-D
+    description: "Debug pod with ephemeral container"
+    scopes: [pods]
+    command: kubectl
+    args: [debug, -n, $NAMESPACE, $NAME, -it, --image=busybox]
+    confirm: true
+
+  lens:
+    shortCut: Ctrl-O
+    description: "Open in Lens"
+    scopes: ["*"]
+    command: lens
+    args: [--context, $CONTEXT]
+    background: true
+```
+
+### Plugin Variables
+
+| Variable | Description |
+|----------|-------------|
+| `$NAMESPACE` | Resource namespace |
+| `$NAME` | Resource name |
+| `$CONTEXT` | Kubernetes context |
+| `$IMAGE` | Container image (for pods) |
+| `$LABELS.key` | Label value by key |
+| `$ANNOTATIONS.key` | Annotation value by key |
+
+### Plugin Options
+
+| Key | Description | Default |
+|-----|-------------|---------|
+| `shortCut` | Trigger key combination | Required |
+| `description` | Plugin description | Required |
+| `scopes` | Applicable resource types | Required |
+| `command` | Command to execute | Required |
+| `args` | Command arguments | `[]` |
+| `background` | Run in background | `false` |
+| `confirm` | Require confirmation | `false` |
+
+---
+
+## Themes (skins/)
+
+Customize the appearance of k13s with theme files.
+
+### Example skin: skins/dracula.yaml
+
+```yaml
+k13s:
+  body:
+    fgColor: "#f8f8f2"
+    bgColor: "#282a36"
+
+  frame:
+    borderColor: "#6272a4"
+    focusBorderColor: "#bd93f9"
+    titleColor: "#f8f8f2"
+    focusTitleColor: "#50fa7b"
+
+  views:
+    table:
+      header:
+        fgColor: "#bd93f9"
+        bgColor: "#282a36"
+        bold: true
+      rowOdd:
+        fgColor: "#f8f8f2"
+        bgColor: "#282a36"
+      rowEven:
+        fgColor: "#f8f8f2"
+        bgColor: "#343746"
+      rowSelected:
+        fgColor: "#282a36"
+        bgColor: "#8be9fd"
+
+    log:
+      fgColor: "#f8f8f2"
+      bgColor: "#282a36"
+      errorColor: "#ff5555"
+      warningColor: "#ffb86c"
+      infoColor: "#8be9fd"
+
+  dialog:
+    fgColor: "#f8f8f2"
+    bgColor: "#44475a"
+    buttonFgColor: "#f8f8f2"
+    buttonBgColor: "#6272a4"
+    buttonFocusFgColor: "#282a36"
+    buttonFocusBgColor: "#50fa7b"
+
+  statusBar:
+    fgColor: "#f8f8f2"
+    bgColor: "#6272a4"
+    errorColor: "#ff5555"
+```
+
+### Color Formats
+
+- **Hex colors**: `"#ff5555"`, `"#282a36"`
+- **Named colors**: `"red"`, `"blue"`, `"green"`
+- **Empty/Default**: `""` uses terminal default
+
+### Creating a New Theme
+
+1. Create a file in `~/.config/k13s/skins/mytheme.yaml`
+2. Copy the structure from the default theme above
+3. Modify colors to your preference
+4. The theme will be applied on next startup

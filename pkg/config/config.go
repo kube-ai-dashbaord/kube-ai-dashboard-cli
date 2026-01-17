@@ -9,12 +9,12 @@ import (
 )
 
 type Config struct {
-	LLM          LLMConfig `json:"llm"`
-	ReportPath   string    `json:"report_path"`
-	EnableAudit  bool      `json:"enable_audit"`
-	Language     string    `json:"language"`
-	BeginnerMode bool      `json:"beginner_mode"`
-	LogLevel     string    `json:"log_level"`
+	LLM          LLMConfig `yaml:"llm" json:"llm"`
+	ReportPath   string    `yaml:"report_path" json:"report_path"`
+	EnableAudit  bool      `yaml:"enable_audit" json:"enable_audit"`
+	Language     string    `yaml:"language" json:"language"`
+	BeginnerMode bool      `yaml:"beginner_mode" json:"beginner_mode"`
+	LogLevel     string    `yaml:"log_level" json:"log_level"`
 }
 
 type LLMConfig struct {
@@ -26,6 +26,12 @@ type LLMConfig struct {
 
 func GetConfigPath() string {
 	return filepath.Join(xdg.ConfigHome, "k13s", "config.yaml")
+}
+
+// GetConfigDir returns the k13s configuration directory
+func GetConfigDir() (string, error) {
+	dir := filepath.Join(xdg.ConfigHome, "k13s")
+	return dir, nil
 }
 
 func NewDefaultConfig() *Config {

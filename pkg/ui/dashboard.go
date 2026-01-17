@@ -43,6 +43,8 @@ type Dashboard struct {
 	OnRestart          func(namespace, name string)
 	OnPortForward      func(namespace, name string)
 	OnExplainRequested func(namespace, name string)
+	OnShell            func(namespace, name string) // Shell into pod (s key)
+	OnEdit             func(namespace, name string) // Edit resource (e key)
 	OnRefresh          func()
 	Filter             string
 	isRefreshing       atomic.Bool
@@ -295,6 +297,53 @@ func NewDashboard(app *tview.Application, k8sClient *k8s.Client, onSelected func
 				ns := d.CurrentNamespace
 				if d.OnPortForward != nil {
 					d.OnPortForward(ns, name)
+				}
+			}
+			return nil
+		}
+
+		if event.Rune() == 's' { // Shell into pod
+			// Only for pods resource
+			if d.CurrentResource == "pods" || d.CurrentResource == "po" {
+				row, _ := d.Root.GetSelection()
+				if row > 0 {
+					name := d.Root.GetCell(row, 1).Text
+					ns := d.CurrentNamespace
+					if ns == "" {
+						// Get namespace from table if in "all namespaces" mode
+						if nsCell := d.Root.GetCell(row, 0); nsCell != nil {
+							nsText := nsCell.Text
+							if len(nsText) > 2 && nsText[:2] == "● " {
+								nsText = nsText[2:]
+							}
+							ns = nsText
+						}
+					}
+					if d.OnShell != nil {
+						d.OnShell(ns, name)
+					}
+				}
+			}
+			return nil
+		}
+
+		if event.Rune() == 'e' { // Edit resource
+			row, _ := d.Root.GetSelection()
+			if row > 0 {
+				name := d.Root.GetCell(row, 1).Text
+				ns := d.CurrentNamespace
+				if ns == "" {
+					// Get namespace from table if in "all namespaces" mode
+					if nsCell := d.Root.GetCell(row, 0); nsCell != nil {
+						nsText := nsCell.Text
+						if len(nsText) > 2 && nsText[:2] == "● " {
+							nsText = nsText[2:]
+						}
+						ns = nsText
+					}
+				}
+				if d.OnEdit != nil {
+					d.OnEdit(ns, name)
 				}
 			}
 			return nil

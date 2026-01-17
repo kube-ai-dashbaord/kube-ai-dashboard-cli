@@ -55,7 +55,9 @@ Switch between resources using the command bar (`:` prefix):
 |-----|--------|
 | `/` | Filter current table (supports regex: `/pattern/`) |
 | `y` | View YAML manifest |
+| `e` | Edit resource in $EDITOR (opens YAML, applies on save) |
 | `l` | Stream logs (Pods) |
+| `s` | Shell into Pod (select container and shell) |
 | `d` | Native Describe |
 | `L` | AI Analyze - Send resource context to AI |
 | `h` | Explain This - Pedagogical AI explanation |

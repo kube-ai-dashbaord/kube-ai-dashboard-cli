@@ -1,0 +1,1324 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>k13s - AI Kubernetes Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #1a1b26;
+            --bg-secondary: #24283b;
+            --bg-tertiary: #414868;
+            --text-primary: #c0caf5;
+            --text-secondary: #a9b1d6;
+            --accent-blue: #7aa2f7;
+            --accent-green: #9ece6a;
+            --accent-red: #f7768e;
+            --accent-yellow: #e0af68;
+            --accent-purple: #bb9af7;
+            --accent-cyan: #7dcfff;
+            --border-color: #414868;
+        }
+
+        body {
+            font-family: 'SF Mono', 'Monaco', 'Menlo', 'Consolas', monospace;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Login Page */
+        .login-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+        }
+
+        .login-box {
+            background: var(--bg-secondary);
+            padding: 40px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            width: 100%;
+            max-width: 400px;
+        }
+
+        .login-box h1 {
+            text-align: center;
+            margin-bottom: 24px;
+            color: var(--accent-blue);
+        }
+
+        .login-box input {
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 16px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-family: inherit;
+        }
+
+        .login-box button {
+            width: 100%;
+            padding: 12px;
+            background: var(--accent-blue);
+            color: var(--bg-primary);
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-family: inherit;
+            font-weight: bold;
+        }
+
+        .login-error {
+            color: var(--accent-red);
+            text-align: center;
+            margin-bottom: 16px;
+            font-size: 14px;
+        }
+
+        /* Main App Container */
+        .app-container {
+            display: none;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .app-container.active {
+            display: flex;
+        }
+
+        /* Top Bar */
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 16px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .logo {
+            font-size: 20px;
+            font-weight: bold;
+            color: var(--accent-blue);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .user-badge {
+            background: var(--bg-tertiary);
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .logout-btn {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 4px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: inherit;
+        }
+
+        .logout-btn:hover {
+            background: var(--bg-tertiary);
+        }
+
+        /* Main Content */
+        .main-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 220px;
+            min-width: 180px;
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        .nav-section {
+            padding: 16px;
+        }
+
+        .nav-title {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+            letter-spacing: 1px;
+        }
+
+        .nav-item {
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 13px;
+            transition: background 0.2s;
+            margin-bottom: 2px;
+        }
+
+        .nav-item:hover {
+            background: var(--bg-tertiary);
+        }
+
+        .nav-item.active {
+            background: var(--accent-blue);
+            color: var(--bg-primary);
+        }
+
+        .nav-item .count {
+            background: var(--bg-tertiary);
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+        }
+
+        .nav-item.active .count {
+            background: rgba(0,0,0,0.2);
+        }
+
+        /* Resizable Panels */
+        .content-wrapper {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .main-panel {
+            flex: 1;
+            min-width: 400px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .resize-handle {
+            width: 4px;
+            background: var(--border-color);
+            cursor: col-resize;
+            transition: background 0.2s;
+        }
+
+        .resize-handle:hover {
+            background: var(--accent-blue);
+        }
+
+        .ai-panel {
+            width: 380px;
+            min-width: 280px;
+            max-width: 600px;
+            background: var(--bg-secondary);
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Main Panel Header */
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+        }
+
+        .panel-title {
+            font-size: 16px;
+            font-weight: 500;
+        }
+
+        .panel-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .namespace-select {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 6px 12px;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 12px;
+        }
+
+        .refresh-btn {
+            background: var(--bg-tertiary);
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            color: var(--text-primary);
+            cursor: pointer;
+            font-family: inherit;
+        }
+
+        /* Table */
+        .table-container {
+            flex: 1;
+            overflow: auto;
+            padding: 16px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        th {
+            background: var(--bg-tertiary);
+            padding: 10px 12px;
+            text-align: left;
+            font-weight: 500;
+            color: var(--text-secondary);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            position: sticky;
+            top: 0;
+        }
+
+        td {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        tr:hover {
+            background: var(--bg-tertiary);
+        }
+
+        .status-running, .status-active, .status-ready { color: var(--accent-green); }
+        .status-pending { color: var(--accent-yellow); }
+        .status-failed, .status-error { color: var(--accent-red); }
+
+        /* AI Panel */
+        .ai-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .ai-badge {
+            background: var(--accent-purple);
+            color: var(--bg-primary);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: bold;
+        }
+
+        .ai-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+        }
+
+        .message {
+            margin-bottom: 16px;
+        }
+
+        .message.user {
+            text-align: right;
+        }
+
+        .message-content {
+            display: inline-block;
+            padding: 10px 14px;
+            border-radius: 12px;
+            max-width: 90%;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .message.user .message-content {
+            background: var(--accent-blue);
+            color: var(--bg-primary);
+            border-bottom-right-radius: 4px;
+        }
+
+        .message.assistant .message-content {
+            background: var(--bg-tertiary);
+            border-bottom-left-radius: 4px;
+        }
+
+        .message-content pre {
+            background: var(--bg-primary);
+            padding: 8px;
+            border-radius: 4px;
+            margin-top: 8px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+
+        .ai-input-container {
+            padding: 16px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .ai-input {
+            width: 100%;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 12px;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 13px;
+            resize: none;
+        }
+
+        .ai-input:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+        }
+
+        .ai-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 8px;
+        }
+
+        .ai-hint {
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+
+        .send-btn {
+            background: var(--accent-blue);
+            color: var(--bg-primary);
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-family: inherit;
+            font-weight: 500;
+        }
+
+        .send-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 4px;
+            padding: 8px 16px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .tab {
+            padding: 8px 16px;
+            border-radius: 6px 6px 0 0;
+            cursor: pointer;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .tab:hover {
+            background: var(--bg-tertiary);
+        }
+
+        .tab.active {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+        }
+
+        /* Settings Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.7);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            width: 100%;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .modal-header h2 {
+            font-size: 18px;
+        }
+
+        .modal-close {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 24px;
+            cursor: pointer;
+        }
+
+        .modal-body {
+            padding: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 10px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-family: inherit;
+        }
+
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            padding: 16px 20px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 13px;
+        }
+
+        .btn-primary {
+            background: var(--accent-blue);
+            color: var(--bg-primary);
+            border: none;
+        }
+
+        .btn-secondary {
+            background: transparent;
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+        }
+
+        /* Loading */
+        .loading-dots {
+            display: flex;
+            gap: 4px;
+        }
+
+        .loading-dots span {
+            width: 6px;
+            height: 6px;
+            background: var(--accent-blue);
+            border-radius: 50%;
+            animation: bounce 1.4s infinite ease-in-out both;
+        }
+
+        .loading-dots span:nth-child(1) { animation-delay: -0.32s; }
+        .loading-dots span:nth-child(2) { animation-delay: -0.16s; }
+
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1); }
+        }
+
+        /* Health Indicator */
+        .health-indicator {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+        }
+
+        .health-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .health-dot.ok { background: var(--accent-green); }
+        .health-dot.warning { background: var(--accent-yellow); }
+        .health-dot.error { background: var(--accent-red); }
+    </style>
+</head>
+<body>
+    <!-- Login Page -->
+    <div class="login-container" id="login-page">
+        <div class="login-box">
+            <h1>k13s</h1>
+            <p style="text-align: center; margin-bottom: 24px; color: var(--text-secondary);">AI Kubernetes Dashboard</p>
+            <div class="login-error" id="login-error"></div>
+            <input type="text" id="login-username" placeholder="Username" value="admin">
+            <input type="password" id="login-password" placeholder="Password" value="admin123">
+            <button onclick="login()">Login</button>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div class="app-container" id="app">
+        <!-- Top Bar -->
+        <div class="top-bar">
+            <div class="logo">
+                <svg width="24" height="24" viewBox="0 0 32 32" fill="none">
+                    <circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width="2"/>
+                    <circle cx="16" cy="16" r="4" fill="currentColor"/>
+                    <circle cx="16" cy="6" r="2" fill="currentColor"/>
+                    <circle cx="24" cy="12" r="2" fill="currentColor"/>
+                    <circle cx="24" cy="20" r="2" fill="currentColor"/>
+                    <circle cx="16" cy="26" r="2" fill="currentColor"/>
+                    <circle cx="8" cy="20" r="2" fill="currentColor"/>
+                    <circle cx="8" cy="12" r="2" fill="currentColor"/>
+                </svg>
+                k13s
+            </div>
+            <div class="health-indicator">
+                <span class="health-dot ok" id="health-dot"></span>
+                <span id="health-status">Connected</span>
+            </div>
+            <div class="user-info">
+                <span class="user-badge" id="user-badge">admin</span>
+                <button class="logout-btn" onclick="showSettings()">Settings</button>
+                <button class="logout-btn" onclick="logout()">Logout</button>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-container">
+            <!-- Sidebar -->
+            <div class="sidebar">
+                <div class="nav-section">
+                    <div class="nav-title">Workloads</div>
+                    <div class="nav-item active" data-resource="pods" onclick="switchResource('pods')">
+                        <span>Pods</span>
+                        <span class="count" id="pods-count">0</span>
+                    </div>
+                    <div class="nav-item" data-resource="deployments" onclick="switchResource('deployments')">
+                        <span>Deployments</span>
+                        <span class="count" id="deployments-count">0</span>
+                    </div>
+                    <div class="nav-item" data-resource="services" onclick="switchResource('services')">
+                        <span>Services</span>
+                        <span class="count" id="services-count">0</span>
+                    </div>
+                </div>
+
+                <div class="nav-section">
+                    <div class="nav-title">Cluster</div>
+                    <div class="nav-item" data-resource="nodes" onclick="switchResource('nodes')">
+                        <span>Nodes</span>
+                        <span class="count" id="nodes-count">0</span>
+                    </div>
+                    <div class="nav-item" data-resource="namespaces" onclick="switchResource('namespaces')">
+                        <span>Namespaces</span>
+                        <span class="count" id="namespaces-count">0</span>
+                    </div>
+                    <div class="nav-item" data-resource="events" onclick="switchResource('events')">
+                        <span>Events</span>
+                        <span class="count" id="events-count">0</span>
+                    </div>
+                </div>
+
+                <div class="nav-section">
+                    <div class="nav-title">Monitoring</div>
+                    <div class="nav-item" onclick="showAuditLogs()">
+                        <span>Audit Logs</span>
+                    </div>
+                    <div class="nav-item" onclick="showReports()">
+                        <span>Reports</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Content Wrapper -->
+            <div class="content-wrapper">
+                <!-- Main Panel -->
+                <div class="main-panel">
+                    <div class="panel-header">
+                        <h2 class="panel-title" id="panel-title">Pods</h2>
+                        <div class="panel-actions">
+                            <select class="namespace-select" id="namespace-select" onchange="onNamespaceChange()">
+                                <option value="">All Namespaces</option>
+                            </select>
+                            <button class="refresh-btn" onclick="refreshData()">Refresh</button>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead id="table-header"></thead>
+                            <tbody id="table-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Resize Handle -->
+                <div class="resize-handle" id="resize-handle"></div>
+
+                <!-- AI Panel -->
+                <div class="ai-panel" id="ai-panel">
+                    <div class="ai-header">
+                        <span>AI Assistant</span>
+                        <span class="ai-badge">GPT</span>
+                    </div>
+                    <div class="ai-messages" id="ai-messages">
+                        <div class="message assistant">
+                            <div class="message-content">
+                                Welcome to k13s! I can help you manage your Kubernetes cluster.
+                                <br><br>
+                                Try asking:
+                                <br>- "Show me all pods"
+                                <br>- "Create an nginx pod"
+                                <br>- "Scale deployment to 3 replicas"
+                            </div>
+                        </div>
+                    </div>
+                    <div class="ai-input-container">
+                        <textarea class="ai-input" id="ai-input" placeholder="Ask me anything about Kubernetes..." rows="2"></textarea>
+                        <div class="ai-actions">
+                            <span class="ai-hint">Press Enter to send</span>
+                            <button class="send-btn" id="send-btn" onclick="sendMessage()">Send</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal-overlay" id="settings-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>Settings</h2>
+                <button class="modal-close" onclick="closeSettings()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="tabs">
+                    <div class="tab active" onclick="switchSettingsTab('general')">General</div>
+                    <div class="tab" onclick="switchSettingsTab('llm')">LLM</div>
+                    <div class="tab" onclick="switchSettingsTab('about')">About</div>
+                </div>
+
+                <div id="settings-general" class="settings-content">
+                    <div class="form-group">
+                        <label>Language</label>
+                        <select id="setting-language">
+                            <option value="en">English</option>
+                            <option value="ko">Korean</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Log Level</label>
+                        <select id="setting-log-level">
+                            <option value="debug">Debug</option>
+                            <option value="info">Info</option>
+                            <option value="warn">Warning</option>
+                            <option value="error">Error</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="settings-llm" class="settings-content" style="display:none;">
+                    <div class="form-group">
+                        <label>Provider</label>
+                        <select id="setting-llm-provider">
+                            <option value="openai">OpenAI</option>
+                            <option value="ollama">Ollama</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Model</label>
+                        <input type="text" id="setting-llm-model" placeholder="gpt-4">
+                    </div>
+                    <div class="form-group">
+                        <label>Endpoint</label>
+                        <input type="text" id="setting-llm-endpoint" placeholder="https://api.openai.com/v1">
+                    </div>
+                    <div class="form-group">
+                        <label>API Key</label>
+                        <input type="password" id="setting-llm-apikey" placeholder="sk-...">
+                    </div>
+                </div>
+
+                <div id="settings-about" class="settings-content" style="display:none;">
+                    <p><strong>k13s</strong> - AI-Powered Kubernetes Dashboard</p>
+                    <p style="margin-top:8px;">Version: 1.0.0</p>
+                    <p style="margin-top:8px;">A modern Kubernetes dashboard with AI assistance, combining the power of k9s-style TUI with a web interface.</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeSettings()">Cancel</button>
+                <button class="btn btn-primary" onclick="saveSettings()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let currentResource = 'pods';
+        let currentNamespace = '';
+        let isLoading = false;
+        let authToken = localStorage.getItem('k13s_token');
+        let currentUser = null;
+
+        // Table headers
+        const tableHeaders = {
+            pods: ['NAME', 'NAMESPACE', 'READY', 'STATUS', 'RESTARTS', 'AGE', 'IP'],
+            deployments: ['NAME', 'NAMESPACE', 'READY', 'UP-TO-DATE', 'AVAILABLE', 'AGE'],
+            services: ['NAME', 'NAMESPACE', 'TYPE', 'CLUSTER-IP', 'PORTS', 'AGE'],
+            nodes: ['NAME', 'STATUS', 'ROLES', 'VERSION', 'AGE'],
+            namespaces: ['NAME', 'STATUS', 'AGE'],
+            events: ['NAME', 'TYPE', 'REASON', 'MESSAGE', 'COUNT', 'LAST SEEN']
+        };
+
+        // Initialize
+        async function init() {
+            if (authToken) {
+                try {
+                    const health = await fetch('/api/health').then(r => r.json());
+                    if (health.auth_enabled) {
+                        const user = await fetchWithAuth('/api/auth/me').then(r => r.json());
+                        currentUser = user;
+                        showApp();
+                    } else {
+                        showApp();
+                    }
+                } catch (e) {
+                    showLogin();
+                }
+            } else {
+                // Check if auth is enabled
+                const health = await fetch('/api/health').then(r => r.json());
+                if (!health.auth_enabled) {
+                    authToken = 'anonymous';
+                    showApp();
+                } else {
+                    showLogin();
+                }
+            }
+        }
+
+        function showLogin() {
+            document.getElementById('login-page').style.display = 'flex';
+            document.getElementById('app').classList.remove('active');
+        }
+
+        function showApp() {
+            document.getElementById('login-page').style.display = 'none';
+            document.getElementById('app').classList.add('active');
+            if (currentUser) {
+                document.getElementById('user-badge').textContent = currentUser.username;
+            }
+            loadNamespaces();
+            loadData();
+            setupResizeHandle();
+            setupHealthCheck();
+        }
+
+        async function login() {
+            const username = document.getElementById('login-username').value;
+            const password = document.getElementById('login-password').value;
+
+            try {
+                const resp = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+
+                if (resp.ok) {
+                    const data = await resp.json();
+                    authToken = data.token;
+                    localStorage.setItem('k13s_token', authToken);
+                    currentUser = { username: data.username, role: data.role };
+                    showApp();
+                } else {
+                    document.getElementById('login-error').textContent = 'Invalid credentials';
+                }
+            } catch (e) {
+                document.getElementById('login-error').textContent = 'Login failed';
+            }
+        }
+
+        async function logout() {
+            await fetch('/api/auth/logout', { method: 'POST' });
+            localStorage.removeItem('k13s_token');
+            authToken = null;
+            currentUser = null;
+            location.reload();
+        }
+
+        async function fetchWithAuth(url, options = {}) {
+            const headers = { ...options.headers };
+            if (authToken && authToken !== 'anonymous') {
+                headers['Authorization'] = `Bearer ${authToken}`;
+            }
+            return fetch(url, { ...options, headers });
+        }
+
+        async function loadNamespaces() {
+            try {
+                const resp = await fetchWithAuth('/api/k8s/namespaces');
+                const data = await resp.json();
+                const select = document.getElementById('namespace-select');
+                select.innerHTML = '<option value="">All Namespaces</option>';
+                if (data.items) {
+                    data.items.forEach(ns => {
+                        select.innerHTML += `<option value="${ns.name}">${ns.name}</option>`;
+                    });
+                }
+            } catch (e) {
+                console.error('Failed to load namespaces:', e);
+            }
+        }
+
+        async function loadData() {
+            const resources = ['pods', 'deployments', 'services', 'nodes', 'namespaces', 'events'];
+            for (const resource of resources) {
+                try {
+                    const ns = (resource === 'nodes' || resource === 'namespaces') ? '' : currentNamespace;
+                    const url = ns ? `/api/k8s/${resource}?namespace=${ns}` : `/api/k8s/${resource}`;
+                    const resp = await fetchWithAuth(url);
+                    const data = await resp.json();
+                    const countEl = document.getElementById(`${resource}-count`);
+                    if (countEl && data.items) {
+                        countEl.textContent = data.items.length;
+                    }
+                    if (resource === currentResource) {
+                        renderTable(resource, data.items || []);
+                    }
+                } catch (e) {
+                    console.error(`Failed to load ${resource}:`, e);
+                }
+            }
+        }
+
+        function switchResource(resource) {
+            currentResource = resource;
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.classList.toggle('active', item.dataset.resource === resource);
+            });
+            document.getElementById('panel-title').textContent = resource.charAt(0).toUpperCase() + resource.slice(1);
+            loadData();
+        }
+
+        function onNamespaceChange() {
+            currentNamespace = document.getElementById('namespace-select').value;
+            loadData();
+        }
+
+        function refreshData() {
+            loadData();
+        }
+
+        function renderTable(resource, items) {
+            const headers = tableHeaders[resource];
+            document.getElementById('table-header').innerHTML =
+                `<tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>`;
+
+            if (!items || items.length === 0) {
+                document.getElementById('table-body').innerHTML =
+                    `<tr><td colspan="${headers.length}" style="text-align:center;padding:40px;">No ${resource} found</td></tr>`;
+                return;
+            }
+
+            document.getElementById('table-body').innerHTML = items.map(item => {
+                switch (resource) {
+                    case 'pods':
+                        return `<tr>
+                            <td>${item.name}</td>
+                            <td>${item.namespace}</td>
+                            <td>${item.ready}</td>
+                            <td class="status-${item.status.toLowerCase()}">${item.status}</td>
+                            <td>${item.restarts}</td>
+                            <td>${item.age}</td>
+                            <td>${item.ip || '-'}</td>
+                        </tr>`;
+                    case 'deployments':
+                        return `<tr>
+                            <td>${item.name}</td>
+                            <td>${item.namespace}</td>
+                            <td>${item.ready}</td>
+                            <td>${item.upToDate}</td>
+                            <td>${item.available}</td>
+                            <td>${item.age}</td>
+                        </tr>`;
+                    case 'services':
+                        return `<tr>
+                            <td>${item.name}</td>
+                            <td>${item.namespace}</td>
+                            <td>${item.type}</td>
+                            <td>${item.clusterIP}</td>
+                            <td>${item.ports}</td>
+                            <td>${item.age}</td>
+                        </tr>`;
+                    case 'nodes':
+                        return `<tr>
+                            <td>${item.name}</td>
+                            <td class="status-${item.status.toLowerCase()}">${item.status}</td>
+                            <td>${item.roles}</td>
+                            <td>${item.version}</td>
+                            <td>${item.age}</td>
+                        </tr>`;
+                    case 'namespaces':
+                        return `<tr>
+                            <td>${item.name}</td>
+                            <td class="status-active">${item.status}</td>
+                            <td>${item.age}</td>
+                        </tr>`;
+                    case 'events':
+                        return `<tr>
+                            <td>${item.name}</td>
+                            <td>${item.type}</td>
+                            <td>${item.reason}</td>
+                            <td>${item.message?.substring(0, 50)}...</td>
+                            <td>${item.count}</td>
+                            <td>${item.lastSeen}</td>
+                        </tr>`;
+                    default:
+                        return '';
+                }
+            }).join('');
+        }
+
+        // AI Chat
+        async function sendMessage() {
+            const input = document.getElementById('ai-input');
+            const message = input.value.trim();
+            if (!message || isLoading) return;
+
+            isLoading = true;
+            document.getElementById('send-btn').disabled = true;
+            input.value = '';
+
+            addMessage(message, true);
+            addLoadingMessage();
+
+            try {
+                const resp = await fetchWithAuth('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message })
+                });
+
+                removeLoadingMessage();
+                const data = await resp.json();
+
+                if (data.error) {
+                    addMessage(`Error: ${data.error}`);
+                } else {
+                    addMessage(data.response);
+                }
+            } catch (e) {
+                removeLoadingMessage();
+                addMessage(`Error: ${e.message}`);
+            }
+
+            isLoading = false;
+            document.getElementById('send-btn').disabled = false;
+        }
+
+        function addMessage(content, isUser = false) {
+            const container = document.getElementById('ai-messages');
+            const div = document.createElement('div');
+            div.className = `message ${isUser ? 'user' : 'assistant'}`;
+
+            let formatted = content;
+            if (!isUser) {
+                formatted = content.replace(/```(\w*)\n?([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
+                formatted = formatted.replace(/\n/g, '<br>');
+            }
+
+            div.innerHTML = `<div class="message-content">${formatted}</div>`;
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function addLoadingMessage() {
+            const container = document.getElementById('ai-messages');
+            const div = document.createElement('div');
+            div.className = 'message assistant';
+            div.id = 'loading-message';
+            div.innerHTML = `<div class="message-content"><div class="loading-dots"><span></span><span></span><span></span></div></div>`;
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function removeLoadingMessage() {
+            const loading = document.getElementById('loading-message');
+            if (loading) loading.remove();
+        }
+
+        document.getElementById('ai-input').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        // Resizable panel
+        function setupResizeHandle() {
+            const handle = document.getElementById('resize-handle');
+            const aiPanel = document.getElementById('ai-panel');
+            let isResizing = false;
+
+            handle.addEventListener('mousedown', (e) => {
+                isResizing = true;
+                document.body.style.cursor = 'col-resize';
+                document.body.style.userSelect = 'none';
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (!isResizing) return;
+                const containerWidth = document.querySelector('.content-wrapper').offsetWidth;
+                const newWidth = containerWidth - e.clientX + document.querySelector('.sidebar').offsetWidth;
+                if (newWidth >= 280 && newWidth <= 600) {
+                    aiPanel.style.width = newWidth + 'px';
+                }
+            });
+
+            document.addEventListener('mouseup', () => {
+                isResizing = false;
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+            });
+        }
+
+        // Health check
+        function setupHealthCheck() {
+            setInterval(async () => {
+                try {
+                    const resp = await fetch('/api/health');
+                    const data = await resp.json();
+                    const dot = document.getElementById('health-dot');
+                    const status = document.getElementById('health-status');
+
+                    if (data.status === 'ok' && data.k8s_ready) {
+                        dot.className = 'health-dot ok';
+                        status.textContent = 'Connected';
+                    } else {
+                        dot.className = 'health-dot warning';
+                        status.textContent = 'Degraded';
+                    }
+                } catch (e) {
+                    document.getElementById('health-dot').className = 'health-dot error';
+                    document.getElementById('health-status').textContent = 'Disconnected';
+                }
+            }, 10000);
+        }
+
+        // Settings
+        function showSettings() {
+            document.getElementById('settings-modal').classList.add('active');
+            loadSettings();
+        }
+
+        function closeSettings() {
+            document.getElementById('settings-modal').classList.remove('active');
+        }
+
+        function switchSettingsTab(tab) {
+            document.querySelectorAll('.tabs .tab').forEach((t, i) => {
+                t.classList.toggle('active', t.textContent.toLowerCase().includes(tab));
+            });
+            document.querySelectorAll('.settings-content').forEach(c => c.style.display = 'none');
+            document.getElementById(`settings-${tab}`).style.display = 'block';
+        }
+
+        async function loadSettings() {
+            try {
+                const resp = await fetchWithAuth('/api/settings');
+                const data = await resp.json();
+                document.getElementById('setting-language').value = data.language || 'en';
+                document.getElementById('setting-log-level').value = data.log_level || 'info';
+                if (data.llm) {
+                    document.getElementById('setting-llm-provider').value = data.llm.provider || 'openai';
+                    document.getElementById('setting-llm-model').value = data.llm.model || '';
+                    document.getElementById('setting-llm-endpoint').value = data.llm.endpoint || '';
+                }
+            } catch (e) {
+                console.error('Failed to load settings:', e);
+            }
+        }
+
+        async function saveSettings() {
+            try {
+                // Save general settings
+                await fetchWithAuth('/api/settings', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        language: document.getElementById('setting-language').value,
+                        log_level: document.getElementById('setting-log-level').value
+                    })
+                });
+
+                // Save LLM settings
+                const apiKey = document.getElementById('setting-llm-apikey').value;
+                await fetchWithAuth('/api/settings/llm', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        provider: document.getElementById('setting-llm-provider').value,
+                        model: document.getElementById('setting-llm-model').value,
+                        endpoint: document.getElementById('setting-llm-endpoint').value,
+                        api_key: apiKey
+                    })
+                });
+
+                closeSettings();
+                alert('Settings saved!');
+            } catch (e) {
+                alert('Failed to save settings');
+            }
+        }
+
+        // Audit logs and reports
+        async function showAuditLogs() {
+            currentResource = 'audit';
+            document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+            document.getElementById('panel-title').textContent = 'Audit Logs';
+
+            try {
+                const resp = await fetchWithAuth('/api/audit');
+                const data = await resp.json();
+
+                document.getElementById('table-header').innerHTML =
+                    '<tr><th>TIME</th><th>USER</th><th>ACTION</th><th>RESOURCE</th><th>DETAILS</th></tr>';
+
+                if (data.logs && data.logs.length > 0) {
+                    document.getElementById('table-body').innerHTML = data.logs.map(log => `
+                        <tr>
+                            <td>${new Date(log.timestamp).toLocaleString()}</td>
+                            <td>${log.user}</td>
+                            <td>${log.action}</td>
+                            <td>${log.resource}</td>
+                            <td>${log.details}</td>
+                        </tr>
+                    `).join('');
+                } else {
+                    document.getElementById('table-body').innerHTML =
+                        '<tr><td colspan="5" style="text-align:center;padding:40px;">No audit logs found</td></tr>';
+                }
+            } catch (e) {
+                console.error('Failed to load audit logs:', e);
+            }
+        }
+
+        async function showReports() {
+            currentResource = 'reports';
+            document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+            document.getElementById('panel-title').textContent = 'Reports';
+
+            document.getElementById('table-header').innerHTML =
+                '<tr><th>REPORT TYPE</th><th>DESCRIPTION</th><th>ACTION</th></tr>';
+
+            document.getElementById('table-body').innerHTML = `
+                <tr>
+                    <td>Cluster Health</td>
+                    <td>Overview of cluster health and resource status</td>
+                    <td><button class="refresh-btn" onclick="generateReport('cluster-health')">Generate</button></td>
+                </tr>
+                <tr>
+                    <td>Resource Usage</td>
+                    <td>Resource utilization across namespaces</td>
+                    <td><button class="refresh-btn" onclick="generateReport('resource-usage')">Generate</button></td>
+                </tr>
+                <tr>
+                    <td>Security Audit</td>
+                    <td>Security-related audit log analysis</td>
+                    <td><button class="refresh-btn" onclick="generateReport('security-audit')">Generate</button></td>
+                </tr>
+                <tr>
+                    <td>AI Interactions</td>
+                    <td>Summary of AI assistant interactions</td>
+                    <td><button class="refresh-btn" onclick="generateReport('ai-interactions')">Generate</button></td>
+                </tr>
+            `;
+        }
+
+        async function generateReport(type) {
+            try {
+                const resp = await fetchWithAuth(`/api/reports?type=${type}`);
+                const report = await resp.json();
+                alert(`Report Generated!\n\nTitle: ${report.title}\nGenerated at: ${new Date(report.generated_at).toLocaleString()}\n\nData: ${JSON.stringify(report.data, null, 2).substring(0, 500)}...`);
+            } catch (e) {
+                alert('Failed to generate report');
+            }
+        }
+
+        // Auto refresh
+        setInterval(() => {
+            if (currentResource !== 'audit' && currentResource !== 'reports') {
+                loadData();
+            }
+        }, 30000);
+
+        // Init
+        init();
+    </script>
+</body>
+</html>

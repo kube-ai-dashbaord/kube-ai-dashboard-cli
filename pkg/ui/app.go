@@ -71,7 +71,7 @@ func (a *App) CreateHeader() *tview.Flex {
 		ctxName, cluster, user, _ = a.K8s.GetContextInfo()
 		k8sVersion, _ = a.K8s.GetServerVersion()
 	}
-	if a.AIClient != nil && a.AIClient.LLM != nil {
+	if a.AIClient != nil && a.AIClient.IsReady() {
 		status = "Online"
 	}
 	if a.Dashboard != nil {

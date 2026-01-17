@@ -39,7 +39,7 @@ func InitApp(tviewApp *tview.Application, cfg *config.Config, aiClient *ai.Clien
 			Model:            cfg.LLM.Model,
 			Provider:         cfg.LLM.Provider,
 			Kubeconfig:       "", // use default
-			LLM:              aiClient.LLM,
+			LLM:              nil, // Using custom AI client instead
 			MaxIterations:    20, // Match kubectl-ai default
 			SkipPermissions:  false,
 			MCPClientEnabled: true,
@@ -58,7 +58,7 @@ func InitApp(tviewApp *tview.Application, cfg *config.Config, aiClient *ai.Clien
 
 	ctx := context.Background()
 	var ag *agent.Agent
-	if aiClient != nil && aiClient.LLM != nil {
+	if aiClient != nil && aiClient.IsReady() {
 		sess, _ := sessionManager.NewSession(sessions.Metadata{
 			ModelID:    cfg.LLM.Model,
 			ProviderID: cfg.LLM.Provider,
@@ -95,7 +95,7 @@ func InitApp(tviewApp *tview.Application, cfg *config.Config, aiClient *ai.Clien
 		if a.Assistant != nil && a.Assistant.Agent != nil {
 			a.Assistant.Agent.Model = newCfg.LLM.Model
 			a.Assistant.Agent.Provider = newCfg.LLM.Provider
-			a.Assistant.Agent.LLM = newAI.LLM
+			// a.Assistant.Agent.LLM is not used - we use custom AI client
 		}
 	}, func() {
 		a.Pages.SwitchToPage("main")

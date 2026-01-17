@@ -26,12 +26,14 @@ default_agent: "@dev-agent"
 
 ## Project Overview
 
-**k13s (kube-ai-dashboard-cli)** is a high-fidelity terminal Kubernetes dashboard merged with an integrated agentic AI assistant. It combines the TUI experience of [k9s](https://k9scli.io/) with the AI-powered intelligence of [kubectl-ai](https://github.com/GoogleCloudPlatform/kubectl-ai).
+**k13s (kube-ai-dashboard-cli)** is a comprehensive Kubernetes management tool that provides both a terminal-based UI (TUI) and a web-based dashboard with an integrated agentic AI assistant. It combines the TUI experience of [k9s](https://k9scli.io/) with the AI-powered intelligence of [kubectl-ai](https://github.com/GoogleCloudPlatform/kubectl-ai).
 
 ### Core Value Proposition
+- **Dual Interface**: Both TUI (terminal) and Web UI with same feature set
 - **k9s Parity**: Full-featured TUI dashboard with Vim-style navigation
 - **kubectl-ai Intelligence**: Agentic AI loop with tool-use (Kubectl, Bash, MCP)
-- **Deep Synergy**: Press `L` on any resource to trigger AI analysis with full context (YAML + Events + Logs)
+- **Deep Synergy**: AI analysis with full context (YAML + Events + Logs)
+- **Enterprise Ready**: Authentication, audit logging, and report generation
 
 ---
 
@@ -59,9 +61,11 @@ The agent should NOT do the following unless explicitly requested:
 ### Languages & Frameworks
 - **Language:** Go 1.25.0+
 - **TUI Framework:** [tview](https://github.com/rivo/tview) with [tcell](https://github.com/gdamore/tcell/v2)
-- **AI Integration:** [kubectl-ai](https://github.com/GoogleCloudPlatform/kubectl-ai) + [gollm](https://github.com/GoogleCloudPlatform/kubectl-ai/tree/main/gollm)
+- **Web Framework:** Standard library `net/http` with embedded static files
+- **AI Integration:** Custom OpenAI-compatible HTTP client (supports OpenAI, Ollama, Anthropic)
 - **Kubernetes Client:** client-go v0.35.0, metrics v0.35.0
 - **Database:** CGO-free SQLite (modernc.org/sqlite) for audit logs and settings
+- **Authentication:** Session-based with SHA256 password hashing
 
 ### Key Dependencies
 ```
@@ -99,7 +103,7 @@ k8s.io/metrics v0.35.0                  # Metrics API
 ```
 kube-ai-dashboard-cli/
 ├── cmd/
-│   ├── kube-ai-dashboard-cli/main.go   # Main entry point
+│   ├── kube-ai-dashboard-cli/main.go   # Main entry point (TUI + Web modes)
 │   └── eval/main.go                    # Evaluation tool
 ├── pkg/
 │   ├── ui/                             # TUI components
@@ -131,9 +135,18 @@ kube-ai-dashboard-cli/
 │   │       ├── rbac.go
 │   │       ├── serviceaccounts.go
 │   │       └── types.go
-│   ├── ai/                             # AI client and reporter
-│   │   ├── client.go
-│   │   └── reporter.go
+│   ├── web/                            # Web UI server
+│   │   ├── server.go                   # HTTP server & API handlers
+│   │   ├── auth.go                     # Authentication system
+│   │   ├── auth_test.go                # Auth tests
+│   │   ├── reports.go                  # Report generation
+│   │   ├── reports_test.go             # Report tests
+│   │   └── static/                     # Embedded static files
+│   │       └── index.html              # Web UI frontend
+│   ├── ai/                             # AI client
+│   │   ├── client.go                   # OpenAI-compatible HTTP client
+│   │   ├── client_test.go              # AI client tests
+│   │   └── reporter.go                 # AI reporter
 │   ├── k8s/                            # Kubernetes client wrapper
 │   │   ├── client.go
 │   │   └── client_test.go
@@ -189,8 +202,11 @@ go build -o k13s-eval ./cmd/eval/main.go
 
 ### Run Commands
 ```bash
-# Run the application
+# Run TUI mode (default)
 ./k13s
+
+# Run Web UI mode
+./k13s -web -port 8080
 
 # Run with specific kubeconfig
 ./k13s --kubeconfig ~/.kube/config
@@ -212,6 +228,8 @@ go test -cover ./...
 
 # Run tests for specific package
 go test -v ./pkg/ui/...
+go test -v ./pkg/web/...
+go test -v ./pkg/ai/...
 go test -v ./pkg/k8s/...
 go test -v ./pkg/config/...
 go test -v ./pkg/db/...
