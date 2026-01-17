@@ -201,6 +201,46 @@ The AI automatically analyzes suggested commands:
 If the AI mentions a resource, you can jump to it using the command bar:
 - `:view pods nginx-bot-123 my-namespace`
 
+## Web UI Mode
+
+Start the web server with:
+```bash
+k13s -web -port 8080
+```
+
+### Web UI Features
+
+| Feature | Description |
+|---------|-------------|
+| **SSE Streaming Chat** | AI responses stream in real-time with a blinking cursor |
+| **Auto-Refresh** | Automatically refresh resource data at configurable intervals |
+| **Manual Refresh** | Click the refresh button for immediate data update |
+| **Settings Panel** | Configure streaming, auto-refresh, LLM provider, and more |
+
+### Auto-Refresh Controls
+
+Located in the header bar:
+- **Refresh Button** (circular arrow): Click for immediate refresh
+- **Auto Toggle**: Enable/disable automatic refresh
+- **Interval Selector**: Choose refresh interval (10s, 30s, 1m, 2m, 5m)
+- **Last Update Time**: Shows when data was last refreshed
+
+### Settings (Web UI)
+
+Access settings via the **Settings** button in the header:
+
+**General Tab:**
+- **Language**: English or Korean
+- **Log Level**: Debug, Info, Warning, Error
+- **Enable Streaming**: Toggle SSE streaming for AI chat
+- **Auto Refresh**: Toggle and interval configuration
+
+**LLM Tab:**
+- Provider selection (OpenAI, Ollama)
+- Model name
+- Endpoint URL
+- API Key
+
 ## Settings & Customization
 
 Type `:health` or `:status` to check system status including:

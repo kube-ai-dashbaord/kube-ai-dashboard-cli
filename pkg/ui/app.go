@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"regexp"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -119,9 +120,11 @@ type App struct {
 	namespaces       []string
 	showAIPanel      bool
 	filterText       string     // Current filter text
+	filterRegex      bool       // True if filter is regex (e.g., /pattern/)
 	tableHeaders     []string   // Original headers
 	tableRows        [][]string // Original rows (unfiltered)
 	apiResources     []k8s.APIResource // Cached API resources from cluster
+	selectedRows     map[int]bool // Multi-select: selected row indices (k9s Space key)
 
 	// Atomic guards (k9s pattern for lock-free update deduplication)
 	inUpdate   int32
@@ -178,6 +181,7 @@ func NewAppWithNamespace(initialNamespace string) *App {
 		currentNamespace: initialNamespace,
 		namespaces:       []string{""},
 		showAIPanel:      true,
+		selectedRows:     make(map[int]bool),
 		logger:           logger,
 	}
 
@@ -999,20 +1003,28 @@ func (a *App) selectNamespaceByNumber(num int) {
 // startFilter activates filter mode
 func (a *App) startFilter() {
 	a.cmdInput.SetLabel(" / ")
-	a.cmdHint.SetText("[gray]Type to filter, Enter to confirm, Esc to clear")
+	a.cmdHint.SetText("[gray]Type to filter (use /regex/ for regex), Enter to confirm, Esc to clear")
 	a.cmdInput.SetText(a.filterText)
 	a.SetFocus(a.cmdInput)
 
 	// Override input handler for filter mode
 	a.cmdInput.SetChangedFunc(func(text string) {
-		a.applyFilter(text)
+		a.applyFilterText(text)
 	})
 
 	a.cmdInput.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		switch event.Key() {
 		case tcell.KeyEnter:
+			text := a.cmdInput.GetText()
 			a.mx.Lock()
-			a.filterText = a.cmdInput.GetText()
+			// Check for regex pattern /pattern/
+			if strings.HasPrefix(text, "/") && strings.HasSuffix(text, "/") && len(text) > 2 {
+				a.filterText = text[1 : len(text)-1]
+				a.filterRegex = true
+			} else {
+				a.filterText = text
+				a.filterRegex = false
+			}
 			a.mx.Unlock()
 			a.cmdInput.SetLabel(" : ")
 			a.cmdHint.SetText("")
@@ -1023,11 +1035,12 @@ func (a *App) startFilter() {
 		case tcell.KeyEsc:
 			a.mx.Lock()
 			a.filterText = ""
+			a.filterRegex = false
 			a.mx.Unlock()
 			a.cmdInput.SetText("")
 			a.cmdInput.SetLabel(" : ")
 			a.cmdHint.SetText("")
-			a.applyFilter("")
+			a.applyFilterText("")
 			a.restoreAutocompleteHandler()
 			a.SetFocus(a.table)
 			return nil
@@ -1036,8 +1049,8 @@ func (a *App) startFilter() {
 	})
 }
 
-// applyFilter filters the table based on the given text
-func (a *App) applyFilter(filter string) {
+// applyFilterText filters the table based on the given text with regex support (k9s style)
+func (a *App) applyFilterText(filter string) {
 	a.mx.RLock()
 	headers := a.tableHeaders
 	rows := a.tableRows
@@ -1047,7 +1060,27 @@ func (a *App) applyFilter(filter string) {
 		return
 	}
 
-	filter = strings.ToLower(filter)
+	// Check for regex pattern /pattern/
+	isRegex := false
+	filterPattern := filter
+	if strings.HasPrefix(filter, "/") && strings.HasSuffix(filter, "/") && len(filter) > 2 {
+		filterPattern = filter[1 : len(filter)-1]
+		isRegex = true
+	}
+
+	// Compile regex if needed
+	var re *regexp.Regexp
+	var err error
+	if isRegex && filterPattern != "" {
+		re, err = regexp.Compile("(?i)" + filterPattern) // Case insensitive
+		if err != nil {
+			// Invalid regex, treat as plain text
+			isRegex = false
+			filterPattern = filter
+		}
+	}
+
+	filterLower := strings.ToLower(filterPattern)
 
 	a.QueueUpdateDraw(func() {
 		a.table.Clear()
@@ -1065,12 +1098,19 @@ func (a *App) applyFilter(filter string) {
 		// Filter and set rows
 		rowIdx := 1
 		for _, row := range rows {
-			if filter != "" {
+			if filterPattern != "" {
 				match := false
 				for _, cell := range row {
-					if strings.Contains(strings.ToLower(cell), filter) {
-						match = true
-						break
+					if isRegex && re != nil {
+						if re.MatchString(cell) {
+							match = true
+							break
+						}
+					} else {
+						if strings.Contains(strings.ToLower(cell), filterLower) {
+							match = true
+							break
+						}
 					}
 				}
 				if !match {
@@ -1085,8 +1125,12 @@ func (a *App) applyFilter(filter string) {
 				}
 				// Highlight matching text
 				displayText := text
-				if filter != "" && strings.Contains(strings.ToLower(text), filter) {
-					displayText = a.highlightMatch(text, filter)
+				if filterPattern != "" {
+					if isRegex && re != nil {
+						displayText = a.highlightRegexMatch(text, re)
+					} else if strings.Contains(strings.ToLower(text), filterLower) {
+						displayText = a.highlightMatch(text, filterLower)
+					}
 				}
 				cell := tview.NewTableCell(displayText).
 					SetTextColor(color).
@@ -1102,7 +1146,11 @@ func (a *App) applyFilter(filter string) {
 
 		filterInfo := ""
 		if filter != "" {
-			filterInfo = fmt.Sprintf(" [filter: %s]", filter)
+			if isRegex {
+				filterInfo = fmt.Sprintf(" [regex: %s]", filterPattern)
+			} else {
+				filterInfo = fmt.Sprintf(" [filter: %s]", filter)
+			}
 		}
 		a.table.SetTitle(fmt.Sprintf(" %s (%d/%d)%s ", resource, rowIdx-1, len(rows), filterInfo))
 
@@ -1125,6 +1173,30 @@ func (a *App) highlightMatch(text, filter string) string {
 	after := text[idx+len(filter):]
 
 	return before + "[yellow]" + match + "[white]" + after
+}
+
+// highlightRegexMatch wraps regex-matching text with color tags (k9s style)
+func (a *App) highlightRegexMatch(text string, re *regexp.Regexp) string {
+	if re == nil {
+		return text
+	}
+	matches := re.FindAllStringIndex(text, -1)
+	if len(matches) == 0 {
+		return text
+	}
+
+	var result strings.Builder
+	lastEnd := 0
+	for _, match := range matches {
+		start, end := match[0], match[1]
+		result.WriteString(text[lastEnd:start])
+		result.WriteString("[yellow]")
+		result.WriteString(text[start:end])
+		result.WriteString("[white]")
+		lastEnd = end
+	}
+	result.WriteString(text[lastEnd:])
+	return result.String()
 }
 
 // restoreAutocompleteHandler restores the default autocomplete behavior
@@ -1244,6 +1316,9 @@ func (a *App) setupKeybindings() {
 			case 'R':
 				a.restartResource() // k9s: Shift+R = restart
 				return nil
+			case ' ':
+				a.toggleSelection() // k9s: Space = toggle selection (multi-select)
+				return nil
 			}
 		case tcell.KeyTab:
 			if a.showAIPanel {
@@ -1267,6 +1342,9 @@ func (a *App) setupKeybindings() {
 			return nil
 		case tcell.KeyCtrlF:
 			a.pageDown() // k9s: Ctrl+F = page down (vim style)
+			return nil
+		case tcell.KeyCtrlB:
+			a.pageUp() // k9s: Ctrl+B = page up (vim style)
 			return nil
 		case tcell.KeyCtrlC:
 			a.Stop()
@@ -1549,7 +1627,7 @@ func (a *App) refresh() {
 
 	// Apply filter if active, otherwise show all
 	if currentFilter != "" {
-		a.applyFilter(currentFilter)
+		a.applyFilterText(currentFilter)
 	} else {
 		// Update UI (k9s pattern: queue all UI updates)
 		a.QueueUpdateDraw(func() {
@@ -2084,14 +2162,21 @@ func (a *App) describeResource() {
 
 // confirmDelete shows a delete confirmation dialog
 func (a *App) confirmDelete() {
+	a.mx.RLock()
+	resource := a.currentResource
+	selectedCount := len(a.selectedRows)
+	a.mx.RUnlock()
+
+	// Check for multi-select deletion
+	if selectedCount > 0 {
+		a.confirmDeleteMultiple()
+		return
+	}
+
 	row, _ := a.table.GetSelection()
 	if row <= 0 {
 		return
 	}
-
-	a.mx.RLock()
-	resource := a.currentResource
-	a.mx.RUnlock()
 
 	// Get resource info
 	var ns, name string
@@ -2113,6 +2198,61 @@ func (a *App) confirmDelete() {
 
 			if buttonLabel == "Delete" {
 				go a.deleteResource(ns, name, resource)
+			}
+		})
+
+	modal.SetBackgroundColor(tcell.ColorDarkRed)
+
+	a.pages.AddPage("delete-confirm", modal, true, true)
+}
+
+// confirmDeleteMultiple confirms deletion of multiple selected resources (k9s style)
+func (a *App) confirmDeleteMultiple() {
+	a.mx.RLock()
+	resource := a.currentResource
+	selectedCount := len(a.selectedRows)
+	selectedRowsCopy := make(map[int]bool)
+	for k, v := range a.selectedRows {
+		selectedRowsCopy[k] = v
+	}
+	a.mx.RUnlock()
+
+	if selectedCount == 0 {
+		return
+	}
+
+	// Build list of resources to delete
+	var items []struct{ ns, name string }
+	for row := range selectedRowsCopy {
+		var ns, name string
+		switch resource {
+		case "nodes", "no", "namespaces", "ns":
+			name = strings.TrimSpace(tview.TranslateANSI(a.table.GetCell(row, 0).Text))
+		default:
+			ns = strings.TrimSpace(tview.TranslateANSI(a.table.GetCell(row, 0).Text))
+			name = strings.TrimSpace(tview.TranslateANSI(a.table.GetCell(row, 1).Text))
+		}
+		if name != "" {
+			items = append(items, struct{ ns, name string }{ns, name})
+		}
+	}
+
+	// Create confirmation modal
+	modal := tview.NewModal().
+		SetText(fmt.Sprintf("[red]Delete %d %s?[white]\n\nThis action cannot be undone.", len(items), resource)).
+		AddButtons([]string{"Cancel", "Delete All"}).
+		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+			a.pages.RemovePage("delete-confirm")
+			a.SetFocus(a.table)
+
+			if buttonLabel == "Delete All" {
+				go func() {
+					for _, item := range items {
+						a.deleteResource(item.ns, item.name, resource)
+					}
+					a.clearSelections()
+					a.refresh()
+				}()
 			}
 		})
 
@@ -2376,70 +2516,96 @@ func (a *App) showHelp() {
 		SetDynamicColors(true).
 		SetScrollable(true).
 		SetText(`
- [yellow::b]k13s - Kubernetes AI Dashboard (k9s compatible)[white::-]
+ [yellow::b]k13s - Kubernetes AI Dashboard[white::-]
+ [gray]k9s compatible keybindings with AI assistance[white]
 
- [cyan]General Navigation:[white]
-   [yellow]j/k[white] or [yellow]↑/↓[white]    Move selection
-   [yellow]g[white]               Go to top
-   [yellow]G[white]               Go to bottom
-   [yellow]Ctrl+U[white]          Page up
-   [yellow]Ctrl+F[white]          Page down
-   [yellow]Enter[white]           Drill down (navigate to related)
-   [yellow]Esc[white]             Go back (previous view)
-   [yellow]Tab[white]             Switch to AI panel
+ ┌──────────────────────────────────────────────────────────────────┐
+ │ [cyan::b]GENERAL[white::-]                                                      │
+ ├──────────────────────────────────────────────────────────────────┤
+ │  [yellow]:[white]        Command mode        [yellow]?[white]        Help                   │
+ │  [yellow]/[white]        Filter mode         [yellow]Esc[white]      Back/Clear/Cancel      │
+ │  [yellow]Tab[white]      AI Panel focus      [yellow]Enter[white]    Select/Drill-down      │
+ │  [yellow]Ctrl+E[white]   Toggle AI panel     [yellow]q/Ctrl+C[white] Quit application       │
+ └──────────────────────────────────────────────────────────────────┘
 
- [cyan]View Actions:[white]
-   [yellow]d[white]               Describe (detailed info)
-   [yellow]y[white]               YAML view
-   [yellow]e[white]               Edit resource
-   [yellow]Ctrl+D[white]          Delete resource
-   [yellow]/[white]               Filter mode
-   [yellow]:[white]               Command mode
+ ┌──────────────────────────────────────────────────────────────────┐
+ │ [cyan::b]NAVIGATION[white::-]                                                    │
+ ├──────────────────────────────────────────────────────────────────┤
+ │  [yellow]j/↓[white]      Down               [yellow]k/↑[white]      Up                     │
+ │  [yellow]g[white]        Top                [yellow]G[white]        Bottom                 │
+ │  [yellow]Ctrl+F[white]   Page down          [yellow]Ctrl+B[white]   Page up                │
+ │  [yellow]Ctrl+D[white]   Half page down     [yellow]Ctrl+U[white]   Half page up           │
+ └──────────────────────────────────────────────────────────────────┘
 
- [cyan]Pod Actions:[white]
-   [yellow]l[white]               View logs
-   [yellow]p[white]               View previous logs
-   [yellow]s[white]               Shell into pod
-   [yellow]a[white]               Attach to container
-   [yellow]o[white]               Show node
-   [yellow]k / Ctrl+K[white]      Kill (force delete) pod
-   [yellow]Shift+F[white]         Port forward
+ ┌──────────────────────────────────────────────────────────────────┐
+ │ [cyan::b]RESOURCE ACTIONS[white::-]                                              │
+ ├──────────────────────────────────────────────────────────────────┤
+ │  [yellow]d[white]        Describe           [yellow]y[white]        YAML view              │
+ │  [yellow]e[white]        Edit ($EDITOR)     [yellow]Ctrl+D[white]   Delete                 │
+ │  [yellow]r[white]        Refresh            [yellow]c[white]        Switch context         │
+ │  [yellow]n[white]        Cycle namespace    [yellow]Space[white]    Multi-select           │
+ └──────────────────────────────────────────────────────────────────┘
 
- [cyan]Workload Actions:[white]
-   [yellow]Shift+S[white]         Scale (deploy/sts/rs)
-   [yellow]Shift+R[white]         Restart (deploy/sts/ds)
-   [yellow]z[white]               Show related (replicasets)
+ ┌──────────────────────────────────────────────────────────────────┐
+ │ [cyan::b]RESOURCE SHORTCUTS[white::-]                                            │
+ ├──────────────────────────────────────────────────────────────────┤
+ │  [yellow]1[white] Pods    [yellow]2[white] Deploy   [yellow]3[white] Svc     [yellow]4[white] Node    [yellow]5[white] NS       │
+ │  [yellow]6[white] Event   [yellow]7[white] CM       [yellow]8[white] Secret  [yellow]9[white] Ingress [yellow]0[white] PVC      │
+ └──────────────────────────────────────────────────────────────────┘
 
- [cyan]CronJob Actions:[white]
-   [yellow]t[white]               Trigger (create job)
+ ┌──────────────────────────────────────────────────────────────────┐
+ │ [cyan::b]POD ACTIONS[white::-]                                                   │
+ ├──────────────────────────────────────────────────────────────────┤
+ │  [yellow]l[white]        Logs               [yellow]p[white]        Previous logs          │
+ │  [yellow]s[white]        Shell              [yellow]a[white]        Attach                 │
+ │  [yellow]o[white]        Show node          [yellow]k/Ctrl+K[white] Kill (force delete)    │
+ │  [yellow]Shift+F[white]  Port forward       [yellow]f[white]        Show port-forward      │
+ └──────────────────────────────────────────────────────────────────┘
 
- [cyan]Namespace Actions:[white]
-   [yellow]u[white]               Use namespace
-   [yellow]0-9[white]             Quick select namespace
+ ┌──────────────────────────────────────────────────────────────────┐
+ │ [cyan::b]WORKLOAD ACTIONS[white::-] (Deploy/StatefulSet/DaemonSet/ReplicaSet)   │
+ ├──────────────────────────────────────────────────────────────────┤
+ │  [yellow]S[white]        Scale              [yellow]R[white]        Restart/Rollout        │
+ │  [yellow]z[white]        Show ReplicaSets   [yellow]Enter[white]    Show Pods              │
+ └──────────────────────────────────────────────────────────────────┘
 
- [cyan]Other:[white]
-   [yellow]r[white]               Refresh
-   [yellow]n[white]               Cycle namespace
-   [yellow]c[white]               Switch context
-   [yellow]?[white]               Show this help
-   [yellow]q[white]               Quit
+ ┌──────────────────────────────────────────────────────────────────┐
+ │ [cyan::b]LOG VIEW[white::-]                                                      │
+ ├──────────────────────────────────────────────────────────────────┤
+ │  [yellow]0-9[white]      Toggle container   [yellow]w[white]        Wrap toggle            │
+ │  [yellow]t[white]        Toggle timestamps  [yellow]Ctrl+S[white]   Save to file           │
+ │  [yellow]/[white]        Filter logs        [yellow]Esc[white]      Exit log view          │
+ └──────────────────────────────────────────────────────────────────┘
 
- [cyan]Drill Down (Enter key):[white]
-   [yellow]Deployment[white]  → Pods       [yellow]Service[white]  → Pods
-   [yellow]ReplicaSet[white]  → Pods       [yellow]Node[white]     → Pods on node
-   [yellow]StatefulSet[white] → Pods       [yellow]CronJob[white]  → Jobs
-   [yellow]DaemonSet[white]   → Pods       [yellow]Namespace[white] → Use & Pods
-   [yellow]Job[white]         → Pods       [yellow]Pod[white]      → Logs
+ ┌──────────────────────────────────────────────────────────────────┐
+ │ [cyan::b]COMMAND EXAMPLES[white::-] (press : to enter command mode)             │
+ ├──────────────────────────────────────────────────────────────────┤
+ │  [yellow]:pods[white] [yellow]:po[white]              List pods                            │
+ │  [yellow]:deploy[white] [yellow]:dp[white]            List deployments                     │
+ │  [yellow]:svc[white] [yellow]:services[white]         List services                        │
+ │  [yellow]:cm[white] [yellow]:configmaps[white]        List configmaps                      │
+ │  [yellow]:ns[white] [yellow]:namespaces[white]        List/switch namespaces               │
+ │  [yellow]:ctx[white] [yellow]:context[white]          Switch context                       │
+ │  [yellow]:crd[white]                   List custom resource definitions        │
+ └──────────────────────────────────────────────────────────────────┘
 
- [cyan]Command Examples:[white]
-   [yellow]:pods[white], [yellow]:deploy[white], [yellow]:svc[white], [yellow]:cm[white], [yellow]:sec[white], [yellow]:pv[white], [yellow]:hpa[white]
-   [yellow]:ns default[white], [yellow]:ctx[white], [yellow]:health[white]
+ ┌──────────────────────────────────────────────────────────────────┐
+ │ [cyan::b]AI ASSISTANT[white::-] (Tab to focus, type and press Enter)            │
+ ├──────────────────────────────────────────────────────────────────┤
+ │  Ask natural language questions or request kubectl commands:     │
+ │  • "Show me all pods in kube-system namespace"                   │
+ │  • "Why is my pod crashing?"                                     │
+ │  • "Scale deployment nginx to 3 replicas"                        │
+ │  • "Show recent events for this deployment"                      │
+ │                                                                  │
+ │  [gray]AI will suggest commands. Press Y to execute, N to cancel.[white]     │
+ └──────────────────────────────────────────────────────────────────┘
 
- [gray]Press Esc or q to close[white]
+ [gray]Press Esc, q, or ? to close this help[white]
 `)
-	help.SetBorder(true).SetTitle(" Help (k9s Compatible) ")
+	help.SetBorder(true).SetTitle(" Help ")
 
-	a.pages.AddPage("help", centered(help, 70, 45), true, true)
+	a.pages.AddPage("help", centered(help, 75, 55), true, true)
 	a.SetFocus(help)
 
 	help.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
@@ -3902,4 +4068,125 @@ func (a *App) showDescribe() {
 		}
 		return event
 	})
+}
+
+// toggleSelection toggles selection of the current row (k9s Space key)
+func (a *App) toggleSelection() {
+	row, _ := a.table.GetSelection()
+	if row <= 0 { // Skip header row
+		return
+	}
+
+	a.mx.Lock()
+	if a.selectedRows[row] {
+		delete(a.selectedRows, row)
+	} else {
+		a.selectedRows[row] = true
+	}
+	selectedCount := len(a.selectedRows)
+	a.mx.Unlock()
+
+	// Update row visual
+	a.updateRowSelection(row)
+
+	// Move to next row
+	rowCount := a.table.GetRowCount()
+	if row < rowCount-1 {
+		a.table.Select(row+1, 0)
+	}
+
+	// Update status bar with selection count
+	if selectedCount > 0 {
+		a.flashMsg(fmt.Sprintf("%d item(s) selected - Ctrl+D to delete selected", selectedCount), false)
+	}
+}
+
+// updateRowSelection updates visual styling for a row based on selection state
+func (a *App) updateRowSelection(row int) {
+	a.mx.RLock()
+	isSelected := a.selectedRows[row]
+	a.mx.RUnlock()
+
+	colCount := a.table.GetColumnCount()
+	for col := 0; col < colCount; col++ {
+		cell := a.table.GetCell(row, col)
+		if cell != nil {
+			if isSelected {
+				// Highlight selected rows with cyan background
+				cell.SetBackgroundColor(tcell.ColorDarkCyan)
+				cell.SetTextColor(tcell.ColorWhite)
+			} else {
+				// Reset to default
+				cell.SetBackgroundColor(tcell.ColorDefault)
+				cell.SetTextColor(tcell.ColorWhite)
+			}
+		}
+	}
+}
+
+// clearSelections clears all selections
+func (a *App) clearSelections() {
+	a.mx.Lock()
+	for row := range a.selectedRows {
+		delete(a.selectedRows, row)
+	}
+	a.mx.Unlock()
+
+	// Reset all row visuals
+	rowCount := a.table.GetRowCount()
+	for row := 1; row < rowCount; row++ {
+		a.updateRowSelection(row)
+	}
+}
+
+// getSelectedResources returns names of selected resources (or current if none selected)
+func (a *App) getSelectedResources() []string {
+	a.mx.RLock()
+	selectedCount := len(a.selectedRows)
+	a.mx.RUnlock()
+
+	if selectedCount == 0 {
+		// No selection, return current row
+		row, _ := a.table.GetSelection()
+		if row > 0 {
+			cell := a.table.GetCell(row, 0)
+			if cell != nil {
+				name := strings.TrimSpace(tview.TranslateANSI(cell.Text))
+				// Handle namespace/name format
+				parts := strings.Fields(name)
+				if len(parts) > 0 {
+					return []string{parts[len(parts)-1]}
+				}
+			}
+		}
+		return nil
+	}
+
+	// Return all selected resources
+	a.mx.RLock()
+	defer a.mx.RUnlock()
+
+	var resources []string
+	for row := range a.selectedRows {
+		cell := a.table.GetCell(row, 0)
+		if cell != nil {
+			// For namespaced resources, column 0 might be namespace, column 1 is name
+			name := strings.TrimSpace(tview.TranslateANSI(cell.Text))
+			// Check if there's a second column with name
+			if a.table.GetColumnCount() > 1 {
+				nameCell := a.table.GetCell(row, 1)
+				if nameCell != nil {
+					possibleName := strings.TrimSpace(tview.TranslateANSI(nameCell.Text))
+					// If first column looks like a namespace, use second column
+					if possibleName != "" && !strings.Contains(name, "-") {
+						name = possibleName
+					}
+				}
+			}
+			if name != "" {
+				resources = append(resources, name)
+			}
+		}
+	}
+	return resources
 }

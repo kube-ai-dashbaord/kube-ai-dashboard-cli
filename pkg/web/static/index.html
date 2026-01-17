@@ -1078,6 +1078,144 @@
             max-height: 100px;
             overflow-y: auto;
         }
+
+        /* SSE Streaming styles */
+        .message.streaming .message-content {
+            border-left: 2px solid var(--accent-blue);
+            padding-left: 12px;
+        }
+
+        .message.streaming .cursor {
+            display: inline-block;
+            animation: blink 0.7s infinite;
+            color: var(--accent-blue);
+            font-weight: bold;
+        }
+
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+
+        /* Auto-refresh indicator */
+        .auto-refresh-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-left: 16px;
+            padding: 4px 12px;
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .auto-refresh-toggle {
+            position: relative;
+            width: 36px;
+            height: 20px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .auto-refresh-toggle.active {
+            background: var(--accent-green);
+            border-color: var(--accent-green);
+        }
+
+        .auto-refresh-toggle::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 14px;
+            height: 14px;
+            background: var(--text-primary);
+            border-radius: 50%;
+            transition: all 0.2s ease;
+        }
+
+        .auto-refresh-toggle.active::after {
+            left: 18px;
+            background: white;
+        }
+
+        .refresh-interval-select {
+            padding: 2px 6px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            color: var(--text-primary);
+            font-size: 11px;
+            cursor: pointer;
+        }
+
+        .last-refresh-time {
+            color: var(--text-secondary);
+            font-size: 11px;
+        }
+
+        .refresh-btn {
+            padding: 4px 8px;
+            background: transparent;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+
+        .refresh-btn:hover {
+            background: var(--accent-blue);
+            border-color: var(--accent-blue);
+            color: white;
+        }
+
+        .refresh-btn.spinning svg {
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        /* Settings panel styles */
+        .settings-section {
+            margin-bottom: 20px;
+        }
+
+        .settings-section h4 {
+            margin-bottom: 12px;
+            color: var(--text-primary);
+            font-size: 14px;
+        }
+
+        .settings-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .settings-row:last-child {
+            border-bottom: none;
+        }
+
+        .settings-label {
+            color: var(--text-primary);
+            font-size: 13px;
+        }
+
+        .settings-description {
+            color: var(--text-secondary);
+            font-size: 11px;
+            margin-top: 2px;
+        }
     </style>
 </head>
 <body>
@@ -1143,6 +1281,24 @@
             <div class="health-indicator">
                 <span class="health-dot ok" id="health-dot"></span>
                 <span id="health-status">Connected</span>
+            </div>
+            <div class="auto-refresh-container">
+                <button class="refresh-btn" onclick="manualRefresh()" title="Refresh now">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M23 4v6h-6M1 20v-6h6"/>
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                    </svg>
+                </button>
+                <span style="color: var(--text-secondary);">Auto:</span>
+                <div class="auto-refresh-toggle" id="auto-refresh-toggle" onclick="toggleAutoRefresh()" title="Toggle auto-refresh"></div>
+                <select class="refresh-interval-select" id="refresh-interval" onchange="setAutoRefreshInterval(this.value)" title="Refresh interval">
+                    <option value="10">10s</option>
+                    <option value="30" selected>30s</option>
+                    <option value="60">1m</option>
+                    <option value="120">2m</option>
+                    <option value="300">5m</option>
+                </select>
+                <span class="last-refresh-time" id="last-refresh-time">--:--:--</span>
             </div>
             <div class="user-info">
                 <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">🌙</button>
@@ -1374,21 +1530,61 @@
                 </div>
 
                 <div id="settings-general" class="settings-content">
-                    <div class="form-group">
-                        <label>Language</label>
-                        <select id="setting-language">
-                            <option value="en">English</option>
-                            <option value="ko">Korean</option>
-                        </select>
+                    <div class="settings-section">
+                        <h4>Display</h4>
+                        <div class="settings-row">
+                            <div>
+                                <div class="settings-label">Language</div>
+                            </div>
+                            <select id="setting-language">
+                                <option value="en">English</option>
+                                <option value="ko">Korean</option>
+                            </select>
+                        </div>
+                        <div class="settings-row">
+                            <div>
+                                <div class="settings-label">Log Level</div>
+                            </div>
+                            <select id="setting-log-level">
+                                <option value="debug">Debug</option>
+                                <option value="info">Info</option>
+                                <option value="warn">Warning</option>
+                                <option value="error">Error</option>
+                            </select>
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label>Log Level</label>
-                        <select id="setting-log-level">
-                            <option value="debug">Debug</option>
-                            <option value="info">Info</option>
-                            <option value="warn">Warning</option>
-                            <option value="error">Error</option>
-                        </select>
+                    <div class="settings-section">
+                        <h4>AI Chat</h4>
+                        <div class="settings-row">
+                            <div>
+                                <div class="settings-label">Enable Streaming</div>
+                                <div class="settings-description">Show AI responses as they're generated</div>
+                            </div>
+                            <div class="auto-refresh-toggle" id="setting-streaming" onclick="toggleStreamingSetting()"></div>
+                        </div>
+                    </div>
+                    <div class="settings-section">
+                        <h4>Auto Refresh</h4>
+                        <div class="settings-row">
+                            <div>
+                                <div class="settings-label">Enable Auto Refresh</div>
+                                <div class="settings-description">Automatically refresh resource data</div>
+                            </div>
+                            <div class="auto-refresh-toggle" id="setting-auto-refresh" onclick="toggleAutoRefreshSetting()"></div>
+                        </div>
+                        <div class="settings-row">
+                            <div>
+                                <div class="settings-label">Refresh Interval</div>
+                                <div class="settings-description">How often to refresh data</div>
+                            </div>
+                            <select id="setting-refresh-interval" onchange="setAutoRefreshIntervalSetting(this.value)">
+                                <option value="10">10 seconds</option>
+                                <option value="30">30 seconds</option>
+                                <option value="60">1 minute</option>
+                                <option value="120">2 minutes</option>
+                                <option value="300">5 minutes</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
 
@@ -1539,6 +1735,15 @@
         let debugMode = localStorage.getItem('k13s_debug_mode') === 'true';
         let aiContextItems = []; // Resources added as context for AI
 
+        // Auto-refresh settings
+        let autoRefreshEnabled = localStorage.getItem('k13s_auto_refresh') === 'true';
+        let autoRefreshInterval = parseInt(localStorage.getItem('k13s_refresh_interval')) || 30; // seconds
+        let autoRefreshTimer = null;
+
+        // SSE streaming settings
+        let useStreaming = localStorage.getItem('k13s_use_streaming') !== 'false'; // default true
+        let currentEventSource = null;
+
         // Table headers for all resource types
         const tableHeaders = {
             pods: ['NAME', 'NAMESPACE', 'READY', 'STATUS', 'RESTARTS', 'AGE', 'IP'],
@@ -1630,6 +1835,12 @@
             loadData();
             setupResizeHandle();
             setupHealthCheck();
+            // Initialize auto-refresh
+            updateAutoRefreshUI();
+            updateLastRefreshTime();
+            if (autoRefreshEnabled) {
+                startAutoRefresh();
+            }
         }
 
         // Login tab switching
@@ -1770,6 +1981,83 @@
 
         function refreshData() {
             loadData();
+            updateLastRefreshTime();
+        }
+
+        // Auto-refresh functions
+        function startAutoRefresh() {
+            if (autoRefreshTimer) {
+                clearInterval(autoRefreshTimer);
+            }
+            if (autoRefreshEnabled && autoRefreshInterval > 0) {
+                autoRefreshTimer = setInterval(() => {
+                    loadData();
+                    updateLastRefreshTime();
+                }, autoRefreshInterval * 1000);
+                updateAutoRefreshUI();
+            }
+        }
+
+        function stopAutoRefresh() {
+            if (autoRefreshTimer) {
+                clearInterval(autoRefreshTimer);
+                autoRefreshTimer = null;
+            }
+            updateAutoRefreshUI();
+        }
+
+        function toggleAutoRefresh() {
+            autoRefreshEnabled = !autoRefreshEnabled;
+            localStorage.setItem('k13s_auto_refresh', autoRefreshEnabled);
+            if (autoRefreshEnabled) {
+                startAutoRefresh();
+            } else {
+                stopAutoRefresh();
+            }
+        }
+
+        function setAutoRefreshInterval(seconds) {
+            autoRefreshInterval = Math.max(5, Math.min(300, seconds)); // 5s to 5min
+            localStorage.setItem('k13s_refresh_interval', autoRefreshInterval);
+            if (autoRefreshEnabled) {
+                startAutoRefresh();
+            }
+        }
+
+        function updateAutoRefreshUI() {
+            const toggle = document.getElementById('auto-refresh-toggle');
+            const intervalSelect = document.getElementById('refresh-interval');
+            if (toggle) {
+                toggle.classList.toggle('active', autoRefreshEnabled);
+                toggle.title = autoRefreshEnabled
+                    ? `Auto-refresh: ON (every ${autoRefreshInterval}s)`
+                    : 'Auto-refresh: OFF';
+            }
+            if (intervalSelect) {
+                intervalSelect.value = autoRefreshInterval;
+            }
+        }
+
+        async function manualRefresh() {
+            const btn = document.querySelector('.refresh-btn');
+            if (btn) {
+                btn.classList.add('spinning');
+            }
+            try {
+                await loadData();
+                updateLastRefreshTime();
+            } finally {
+                if (btn) {
+                    setTimeout(() => btn.classList.remove('spinning'), 500);
+                }
+            }
+        }
+
+        function updateLastRefreshTime() {
+            const el = document.getElementById('last-refresh-time');
+            if (el) {
+                el.textContent = new Date().toLocaleTimeString();
+            }
         }
 
         function renderTable(resource, items) {
@@ -1853,6 +2141,91 @@
             input.value = '';
 
             addMessage(message, true);
+
+            if (useStreaming) {
+                await sendMessageStreaming(message);
+            } else {
+                await sendMessageNonStreaming(message);
+            }
+
+            isLoading = false;
+            document.getElementById('send-btn').disabled = false;
+        }
+
+        // SSE Streaming chat
+        async function sendMessageStreaming(message) {
+            // Create streaming message placeholder
+            const container = document.getElementById('ai-messages');
+            const div = document.createElement('div');
+            div.className = 'message assistant streaming';
+            div.id = 'streaming-message';
+            div.innerHTML = `<div class="message-content"><span class="cursor">▊</span></div>`;
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+
+            const contentEl = div.querySelector('.message-content');
+            let fullContent = '';
+
+            try {
+                const response = await fetch('/api/chat/stream', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({ message })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const chunk = decoder.decode(value, { stream: true });
+                    const lines = chunk.split('\n');
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = line.slice(6);
+                            if (data === '[DONE]') {
+                                break;
+                            }
+                            // Unescape newlines
+                            const text = data.replace(/\\n/g, '\n');
+                            fullContent += text;
+                            // Format and update content
+                            let formatted = fullContent;
+                            formatted = formatted.replace(/```(\w*)\n?([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
+                            formatted = formatted.replace(/\n/g, '<br>');
+                            contentEl.innerHTML = formatted + '<span class="cursor">▊</span>';
+                            container.scrollTop = container.scrollHeight;
+                        }
+                    }
+                }
+
+                // Remove cursor and finalize
+                div.classList.remove('streaming');
+                div.id = '';
+                let formatted = fullContent;
+                formatted = formatted.replace(/```(\w*)\n?([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
+                formatted = formatted.replace(/\n/g, '<br>');
+                contentEl.innerHTML = formatted;
+
+            } catch (e) {
+                div.classList.remove('streaming');
+                div.id = '';
+                contentEl.innerHTML = `<span style="color: var(--accent-red)">Error: ${e.message}</span>`;
+            }
+        }
+
+        // Non-streaming chat (fallback)
+        async function sendMessageNonStreaming(message) {
             addLoadingMessage();
 
             try {
@@ -1874,9 +2247,6 @@
                 removeLoadingMessage();
                 addMessage(`Error: ${e.message}`);
             }
-
-            isLoading = false;
-            document.getElementById('send-btn').disabled = false;
         }
 
         function addMessage(content, isUser = false) {
@@ -1997,9 +2367,43 @@
                     document.getElementById('setting-llm-model').value = data.llm.model || '';
                     document.getElementById('setting-llm-endpoint').value = data.llm.endpoint || '';
                 }
+                // Load local settings
+                updateSettingsUI();
             } catch (e) {
                 console.error('Failed to load settings:', e);
             }
+        }
+
+        function updateSettingsUI() {
+            const streamingToggle = document.getElementById('setting-streaming');
+            const autoRefreshToggle = document.getElementById('setting-auto-refresh');
+            const intervalSelect = document.getElementById('setting-refresh-interval');
+
+            if (streamingToggle) {
+                streamingToggle.classList.toggle('active', useStreaming);
+            }
+            if (autoRefreshToggle) {
+                autoRefreshToggle.classList.toggle('active', autoRefreshEnabled);
+            }
+            if (intervalSelect) {
+                intervalSelect.value = autoRefreshInterval;
+            }
+        }
+
+        function toggleStreamingSetting() {
+            useStreaming = !useStreaming;
+            localStorage.setItem('k13s_use_streaming', useStreaming);
+            updateSettingsUI();
+        }
+
+        function toggleAutoRefreshSetting() {
+            toggleAutoRefresh();
+            updateSettingsUI();
+        }
+
+        function setAutoRefreshIntervalSetting(value) {
+            setAutoRefreshInterval(parseInt(value));
+            updateSettingsUI();
         }
 
         async function saveSettings() {
@@ -2108,12 +2512,8 @@
             }
         }
 
-        // Auto refresh
-        setInterval(() => {
-            if (currentResource !== 'audit' && currentResource !== 'reports') {
-                loadData();
-            }
-        }, 30000);
+        // Note: Auto-refresh is now handled by startAutoRefresh() in init()
+        // with user-configurable interval settings
 
         // Theme toggle
         let isDarkMode = true;

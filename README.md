@@ -19,12 +19,13 @@
 
 ### Web UI Dashboard
 - **Modern Web Interface**: Responsive design with resizable panels
+- **SSE Streaming AI Chat**: Real-time streaming responses with live cursor animation
+- **Auto-Refresh**: Configurable auto-refresh (10s-5min) with manual refresh button
 - **Authentication System**: Session-based authentication with user management
 - **LDAP/SSO Support**: Enterprise authentication with group-based role mapping
 - **Audit Logging**: Track all actions and AI interactions in SQLite database
 - **Reports Generation**: Cluster health, resource usage, security audit, and AI interaction reports
-- **Real-time AI Chat**: Streaming responses with syntax highlighting for commands
-- **Settings Management**: Configure LLM providers, language, and application settings
+- **Settings Management**: Configure LLM providers, streaming, auto-refresh, and language settings
 
 ### Agentic AI Assistant
 - **100% kubectl-ai Parity**: Full agentic loop with tool-use (Kubectl, Bash)
@@ -167,8 +168,9 @@ open http://localhost:8080
 **Web UI Features:**
 - Left sidebar with resource navigation
 - Main content area with resource tables
-- Resizable AI chat panel
-- Settings modal with LLM configuration
+- Resizable AI chat panel with SSE streaming
+- Auto-refresh controls (toggle, interval selector, last update time)
+- Settings modal with LLM, streaming, and auto-refresh configuration
 - Audit logs viewer
 - Reports generation
 
