@@ -3825,18 +3825,6 @@
             }
         }
 
-        // Add click handlers to table rows
-        function addRowClickHandlers() {
-            document.querySelectorAll('#table-body tr').forEach((row, index) => {
-                row.onclick = () => {
-                    const item = cachedData[index];
-                    if (item) {
-                        showResourceDetail(item);
-                    }
-                };
-            });
-        }
-
         // Override renderTable to include click handlers and cache data
         const originalRenderTable = renderTable;
         renderTable = function(resource, items) {
@@ -3953,7 +3941,7 @@
             }).join('\n');
         }
 
-        // Update addRowClickHandlers to support right-click for context
+        // Update addRowClickHandlers - explicit button for AI context only
         function addRowClickHandlers() {
             document.querySelectorAll('#table-body tr').forEach((row, index) => {
                 // Left click - show detail modal
@@ -3964,21 +3952,7 @@
                     }
                 };
 
-                // Right click - add to AI context
-                row.oncontextmenu = (e) => {
-                    e.preventDefault();
-                    const item = cachedData[index];
-                    if (item) {
-                        addToAIContext(item);
-                        // Visual feedback
-                        row.style.background = 'var(--accent-purple)';
-                        setTimeout(() => {
-                            row.style.background = '';
-                        }, 200);
-                    }
-                };
-
-                // Add button to row for adding context
+                // Add explicit +AI button for adding to context
                 const firstCell = row.querySelector('td:first-child');
                 if (firstCell && !firstCell.querySelector('.add-context-btn')) {
                     const btn = document.createElement('button');
@@ -3990,6 +3964,13 @@
                         const item = cachedData[index];
                         if (item) {
                             addToAIContext(item);
+                            // Visual feedback
+                            btn.textContent = '✓';
+                            btn.style.background = 'var(--accent-green)';
+                            setTimeout(() => {
+                                btn.textContent = '+AI';
+                                btn.style.background = '';
+                            }, 1000);
                         }
                     };
                     firstCell.prepend(btn);
