@@ -10,14 +10,16 @@ import (
 	"time"
 
 	"github.com/kube-ai-dashbaord/kube-ai-dashboard-cli/pkg/log"
-	"go.yaml.in/yaml/v2"
+	"gopkg.in/yaml.v2"
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -814,4 +816,331 @@ func (c *Client) UncordonNode(ctx context.Context, nodeName string) error {
 	payload := []byte(`{"spec":{"unschedulable":false}}`)
 	_, err := c.Clientset.CoreV1().Nodes().Patch(ctx, nodeName, types.MergePatchType, payload, metav1.PatchOptions{})
 	return err
+}
+
+// Extended List functions for additional resources
+
+func (c *Client) ListReplicaSets(ctx context.Context, namespace string) ([]appsv1.ReplicaSet, error) {
+	opts := metav1.ListOptions{}
+	if namespace == "" {
+		list, err := c.Clientset.AppsV1().ReplicaSets("").List(ctx, opts)
+		if err != nil {
+			return nil, err
+		}
+		return list.Items, nil
+	}
+	list, err := c.Clientset.AppsV1().ReplicaSets(namespace).List(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	return list.Items, nil
+}
+
+func (c *Client) ListReplicationControllers(ctx context.Context, namespace string) ([]corev1.ReplicationController, error) {
+	opts := metav1.ListOptions{}
+	if namespace == "" {
+		list, err := c.Clientset.CoreV1().ReplicationControllers("").List(ctx, opts)
+		if err != nil {
+			return nil, err
+		}
+		return list.Items, nil
+	}
+	list, err := c.Clientset.CoreV1().ReplicationControllers(namespace).List(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	return list.Items, nil
+}
+
+func (c *Client) ListEndpoints(ctx context.Context, namespace string) ([]corev1.Endpoints, error) {
+	opts := metav1.ListOptions{}
+	if namespace == "" {
+		list, err := c.Clientset.CoreV1().Endpoints("").List(ctx, opts)
+		if err != nil {
+			return nil, err
+		}
+		return list.Items, nil
+	}
+	list, err := c.Clientset.CoreV1().Endpoints(namespace).List(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	return list.Items, nil
+}
+
+func (c *Client) ListPodDisruptionBudgets(ctx context.Context, namespace string) ([]policyv1.PodDisruptionBudget, error) {
+	opts := metav1.ListOptions{}
+	if namespace == "" {
+		list, err := c.Clientset.PolicyV1().PodDisruptionBudgets("").List(ctx, opts)
+		if err != nil {
+			return nil, err
+		}
+		return list.Items, nil
+	}
+	list, err := c.Clientset.PolicyV1().PodDisruptionBudgets(namespace).List(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	return list.Items, nil
+}
+
+func (c *Client) ListLimitRanges(ctx context.Context, namespace string) ([]corev1.LimitRange, error) {
+	opts := metav1.ListOptions{}
+	if namespace == "" {
+		list, err := c.Clientset.CoreV1().LimitRanges("").List(ctx, opts)
+		if err != nil {
+			return nil, err
+		}
+		return list.Items, nil
+	}
+	list, err := c.Clientset.CoreV1().LimitRanges(namespace).List(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	return list.Items, nil
+}
+
+func (c *Client) ListResourceQuotas(ctx context.Context, namespace string) ([]corev1.ResourceQuota, error) {
+	opts := metav1.ListOptions{}
+	if namespace == "" {
+		list, err := c.Clientset.CoreV1().ResourceQuotas("").List(ctx, opts)
+		if err != nil {
+			return nil, err
+		}
+		return list.Items, nil
+	}
+	list, err := c.Clientset.CoreV1().ResourceQuotas(namespace).List(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	return list.Items, nil
+}
+
+func (c *Client) ListHPAs(ctx context.Context, namespace string) ([]autoscalingv2.HorizontalPodAutoscaler, error) {
+	opts := metav1.ListOptions{}
+	if namespace == "" {
+		list, err := c.Clientset.AutoscalingV2().HorizontalPodAutoscalers("").List(ctx, opts)
+		if err != nil {
+			return nil, err
+		}
+		return list.Items, nil
+	}
+	list, err := c.Clientset.AutoscalingV2().HorizontalPodAutoscalers(namespace).List(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	return list.Items, nil
+}
+
+func (c *Client) ListCRDs(ctx context.Context) ([]apiextv1.CustomResourceDefinition, error) {
+	gvr := schema.GroupVersionResource{
+		Group:    "apiextensions.k8s.io",
+		Version:  "v1",
+		Resource: "customresourcedefinitions",
+	}
+	list, err := c.Dynamic.Resource(gvr).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	var crds []apiextv1.CustomResourceDefinition
+	for _, item := range list.Items {
+		var crd apiextv1.CustomResourceDefinition
+		crd.Name = item.GetName()
+		crd.CreationTimestamp = item.GetCreationTimestamp()
+		crds = append(crds, crd)
+	}
+	return crds, nil
+}
+
+// DescribeResource returns kubectl describe-like output for a resource
+func (c *Client) DescribeResource(ctx context.Context, resource, namespace, name string) (string, error) {
+	var result strings.Builder
+
+	switch resource {
+	case "pods":
+		pod, err := c.Clientset.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return "", err
+		}
+		result.WriteString(fmt.Sprintf("Name:         %s\n", pod.Name))
+		result.WriteString(fmt.Sprintf("Namespace:    %s\n", pod.Namespace))
+		result.WriteString(fmt.Sprintf("Node:         %s\n", pod.Spec.NodeName))
+		result.WriteString(fmt.Sprintf("Status:       %s\n", pod.Status.Phase))
+		result.WriteString(fmt.Sprintf("IP:           %s\n", pod.Status.PodIP))
+		result.WriteString(fmt.Sprintf("Created:      %s\n", pod.CreationTimestamp.Format(time.RFC3339)))
+		result.WriteString("\nLabels:\n")
+		for k, v := range pod.Labels {
+			result.WriteString(fmt.Sprintf("  %s=%s\n", k, v))
+		}
+		result.WriteString("\nContainers:\n")
+		for _, c := range pod.Spec.Containers {
+			result.WriteString(fmt.Sprintf("  %s:\n", c.Name))
+			result.WriteString(fmt.Sprintf("    Image:   %s\n", c.Image))
+			result.WriteString(fmt.Sprintf("    Ports:   "))
+			var ports []string
+			for _, p := range c.Ports {
+				ports = append(ports, fmt.Sprintf("%d/%s", p.ContainerPort, p.Protocol))
+			}
+			result.WriteString(strings.Join(ports, ", ") + "\n")
+		}
+		result.WriteString("\nConditions:\n")
+		for _, cond := range pod.Status.Conditions {
+			result.WriteString(fmt.Sprintf("  Type: %s, Status: %s\n", cond.Type, cond.Status))
+		}
+		result.WriteString("\nEvents:\n")
+		events, _ := c.Clientset.CoreV1().Events(namespace).List(ctx, metav1.ListOptions{
+			FieldSelector: fmt.Sprintf("involvedObject.name=%s,involvedObject.kind=Pod", name),
+		})
+		if events != nil && len(events.Items) > 0 {
+			for _, e := range events.Items {
+				result.WriteString(fmt.Sprintf("  %s  %s  %s\n", e.LastTimestamp.Format("15:04:05"), e.Reason, e.Message))
+			}
+		} else {
+			result.WriteString("  <none>\n")
+		}
+
+	case "deployments":
+		dep, err := c.Clientset.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return "", err
+		}
+		replicas := int32(1)
+		if dep.Spec.Replicas != nil {
+			replicas = *dep.Spec.Replicas
+		}
+		result.WriteString(fmt.Sprintf("Name:         %s\n", dep.Name))
+		result.WriteString(fmt.Sprintf("Namespace:    %s\n", dep.Namespace))
+		result.WriteString(fmt.Sprintf("Replicas:     %d desired | %d updated | %d total | %d available | %d unavailable\n",
+			replicas, dep.Status.UpdatedReplicas, dep.Status.Replicas, dep.Status.AvailableReplicas, dep.Status.UnavailableReplicas))
+		result.WriteString(fmt.Sprintf("Strategy:     %s\n", dep.Spec.Strategy.Type))
+		result.WriteString(fmt.Sprintf("Created:      %s\n", dep.CreationTimestamp.Format(time.RFC3339)))
+		result.WriteString("\nLabels:\n")
+		for k, v := range dep.Labels {
+			result.WriteString(fmt.Sprintf("  %s=%s\n", k, v))
+		}
+		result.WriteString("\nSelector:\n")
+		for k, v := range dep.Spec.Selector.MatchLabels {
+			result.WriteString(fmt.Sprintf("  %s=%s\n", k, v))
+		}
+		result.WriteString("\nPod Template:\n")
+		for _, c := range dep.Spec.Template.Spec.Containers {
+			result.WriteString(fmt.Sprintf("  Container: %s\n", c.Name))
+			result.WriteString(fmt.Sprintf("    Image:   %s\n", c.Image))
+		}
+		result.WriteString("\nConditions:\n")
+		for _, cond := range dep.Status.Conditions {
+			result.WriteString(fmt.Sprintf("  Type: %s, Status: %s, Reason: %s\n", cond.Type, cond.Status, cond.Reason))
+		}
+
+	case "services":
+		svc, err := c.Clientset.CoreV1().Services(namespace).Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return "", err
+		}
+		result.WriteString(fmt.Sprintf("Name:         %s\n", svc.Name))
+		result.WriteString(fmt.Sprintf("Namespace:    %s\n", svc.Namespace))
+		result.WriteString(fmt.Sprintf("Type:         %s\n", svc.Spec.Type))
+		result.WriteString(fmt.Sprintf("ClusterIP:    %s\n", svc.Spec.ClusterIP))
+		result.WriteString(fmt.Sprintf("Created:      %s\n", svc.CreationTimestamp.Format(time.RFC3339)))
+		result.WriteString("\nLabels:\n")
+		for k, v := range svc.Labels {
+			result.WriteString(fmt.Sprintf("  %s=%s\n", k, v))
+		}
+		result.WriteString("\nSelector:\n")
+		for k, v := range svc.Spec.Selector {
+			result.WriteString(fmt.Sprintf("  %s=%s\n", k, v))
+		}
+		result.WriteString("\nPorts:\n")
+		for _, p := range svc.Spec.Ports {
+			result.WriteString(fmt.Sprintf("  %s %d/%s -> %d\n", p.Name, p.Port, p.Protocol, p.TargetPort.IntVal))
+		}
+
+	case "nodes":
+		node, err := c.Clientset.CoreV1().Nodes().Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return "", err
+		}
+		result.WriteString(fmt.Sprintf("Name:         %s\n", node.Name))
+		result.WriteString(fmt.Sprintf("Created:      %s\n", node.CreationTimestamp.Format(time.RFC3339)))
+		result.WriteString("\nLabels:\n")
+		for k, v := range node.Labels {
+			result.WriteString(fmt.Sprintf("  %s=%s\n", k, v))
+		}
+		result.WriteString("\nConditions:\n")
+		for _, cond := range node.Status.Conditions {
+			result.WriteString(fmt.Sprintf("  Type: %s, Status: %s\n", cond.Type, cond.Status))
+		}
+		result.WriteString("\nCapacity:\n")
+		for k, v := range node.Status.Capacity {
+			result.WriteString(fmt.Sprintf("  %s: %s\n", k, v.String()))
+		}
+		result.WriteString("\nAllocatable:\n")
+		for k, v := range node.Status.Allocatable {
+			result.WriteString(fmt.Sprintf("  %s: %s\n", k, v.String()))
+		}
+		result.WriteString("\nSystem Info:\n")
+		result.WriteString(fmt.Sprintf("  OS Image:             %s\n", node.Status.NodeInfo.OSImage))
+		result.WriteString(fmt.Sprintf("  Kernel Version:       %s\n", node.Status.NodeInfo.KernelVersion))
+		result.WriteString(fmt.Sprintf("  Container Runtime:    %s\n", node.Status.NodeInfo.ContainerRuntimeVersion))
+		result.WriteString(fmt.Sprintf("  Kubelet Version:      %s\n", node.Status.NodeInfo.KubeletVersion))
+
+	default:
+		// Generic describe using dynamic client
+		gvr, err := c.getGVRForResource(resource)
+		if err != nil {
+			return "", err
+		}
+		var obj interface{}
+		if namespace != "" {
+			unstructured, err := c.Dynamic.Resource(gvr).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+			if err != nil {
+				return "", err
+			}
+			obj = unstructured.Object
+		} else {
+			unstructured, err := c.Dynamic.Resource(gvr).Get(ctx, name, metav1.GetOptions{})
+			if err != nil {
+				return "", err
+			}
+			obj = unstructured.Object
+		}
+		data, err := yaml.Marshal(obj)
+		if err != nil {
+			return "", err
+		}
+		result.WriteString(string(data))
+	}
+
+	return result.String(), nil
+}
+
+// getGVRForResource maps resource names to GroupVersionResource
+func (c *Client) getGVRForResource(resource string) (schema.GroupVersionResource, error) {
+	resourceMap := map[string]schema.GroupVersionResource{
+		"configmaps":                 {Group: "", Version: "v1", Resource: "configmaps"},
+		"secrets":                    {Group: "", Version: "v1", Resource: "secrets"},
+		"persistentvolumes":          {Group: "", Version: "v1", Resource: "persistentvolumes"},
+		"persistentvolumeclaims":     {Group: "", Version: "v1", Resource: "persistentvolumeclaims"},
+		"storageclasses":             {Group: "storage.k8s.io", Version: "v1", Resource: "storageclasses"},
+		"replicasets":                {Group: "apps", Version: "v1", Resource: "replicasets"},
+		"daemonsets":                 {Group: "apps", Version: "v1", Resource: "daemonsets"},
+		"statefulsets":               {Group: "apps", Version: "v1", Resource: "statefulsets"},
+		"jobs":                       {Group: "batch", Version: "v1", Resource: "jobs"},
+		"cronjobs":                   {Group: "batch", Version: "v1", Resource: "cronjobs"},
+		"ingresses":                  {Group: "networking.k8s.io", Version: "v1", Resource: "ingresses"},
+		"networkpolicies":            {Group: "networking.k8s.io", Version: "v1", Resource: "networkpolicies"},
+		"serviceaccounts":            {Group: "", Version: "v1", Resource: "serviceaccounts"},
+		"roles":                      {Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "roles"},
+		"rolebindings":               {Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "rolebindings"},
+		"clusterroles":               {Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "clusterroles"},
+		"clusterrolebindings":        {Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "clusterrolebindings"},
+		"poddisruptionbudgets":       {Group: "policy", Version: "v1", Resource: "poddisruptionbudgets"},
+		"horizontalpodautoscalers":   {Group: "autoscaling", Version: "v2", Resource: "horizontalpodautoscalers"},
+		"customresourcedefinitions":  {Group: "apiextensions.k8s.io", Version: "v1", Resource: "customresourcedefinitions"},
+	}
+
+	if gvr, ok := resourceMap[resource]; ok {
+		return gvr, nil
+	}
+	return schema.GroupVersionResource{}, fmt.Errorf("unknown resource: %s", resource)
 }
