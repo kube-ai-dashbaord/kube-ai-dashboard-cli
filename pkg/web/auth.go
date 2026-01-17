@@ -19,6 +19,9 @@ type User struct {
 	Username     string    `json:"username"`
 	PasswordHash string    `json:"-"`
 	Role         string    `json:"role"` // admin, user, viewer
+	Email        string    `json:"email,omitempty"`
+	DisplayName  string    `json:"display_name,omitempty"`
+	Source       string    `json:"source"` // local, ldap
 	CreatedAt    time.Time `json:"created_at"`
 	LastLogin    time.Time `json:"last_login,omitempty"`
 }
@@ -29,16 +32,18 @@ type Session struct {
 	UserID    string    `json:"user_id"`
 	Username  string    `json:"username"`
 	Role      string    `json:"role"`
+	Source    string    `json:"source"` // local, ldap
 	CreatedAt time.Time `json:"created_at"`
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
 // AuthManager handles authentication
 type AuthManager struct {
-	users    map[string]*User   // username -> User
-	sessions map[string]*Session // session ID -> Session
-	mu       sync.RWMutex
-	config   *AuthConfig
+	users        map[string]*User    // username -> User
+	sessions     map[string]*Session // session ID -> Session
+	mu           sync.RWMutex
+	config       *AuthConfig
+	ldapProvider *LDAPProvider
 }
 
 // AuthConfig holds authentication configuration
@@ -47,6 +52,7 @@ type AuthConfig struct {
 	SessionDuration time.Duration `yaml:"session_duration" json:"session_duration"`
 	DefaultAdmin    string        `yaml:"default_admin" json:"default_admin"`
 	DefaultPassword string        `yaml:"default_password" json:"-"`
+	LDAP            *LDAPConfig   `yaml:"ldap" json:"ldap"`
 }
 
 // NewAuthManager creates a new authentication manager
@@ -57,7 +63,12 @@ func NewAuthManager(cfg *AuthConfig) *AuthManager {
 		config:   cfg,
 	}
 
-	// Create default admin user if enabled
+	// Initialize LDAP provider if configured
+	if cfg.LDAP != nil && cfg.LDAP.Enabled {
+		am.ldapProvider = NewLDAPProvider(cfg.LDAP)
+	}
+
+	// Create default admin user if enabled (for local auth fallback)
 	if cfg.Enabled {
 		adminUser := cfg.DefaultAdmin
 		if adminUser == "" {
@@ -67,10 +78,28 @@ func NewAuthManager(cfg *AuthConfig) *AuthManager {
 		if adminPass == "" {
 			adminPass = "admin123" // Default password - should be changed
 		}
-		am.CreateUser(adminUser, adminPass, "admin")
+		am.createLocalUser(adminUser, adminPass, "admin")
 	}
 
 	return am
+}
+
+// createLocalUser creates a local user (internal use)
+func (am *AuthManager) createLocalUser(username, password, role string) error {
+	if _, exists := am.users[username]; exists {
+		return fmt.Errorf("user already exists: %s", username)
+	}
+
+	am.users[username] = &User{
+		ID:           generateSessionID()[:16],
+		Username:     username,
+		PasswordHash: hashPassword(password),
+		Role:         role,
+		Source:       "local",
+		CreatedAt:    time.Now(),
+	}
+
+	return nil
 }
 
 // hashPassword creates a SHA256 hash of the password
@@ -86,7 +115,7 @@ func generateSessionID() string {
 	return base64.URLEncoding.EncodeToString(b)
 }
 
-// CreateUser creates a new user
+// CreateUser creates a new local user
 func (am *AuthManager) CreateUser(username, password, role string) error {
 	am.mu.Lock()
 	defer am.mu.Unlock()
@@ -100,6 +129,7 @@ func (am *AuthManager) CreateUser(username, password, role string) error {
 		Username:     username,
 		PasswordHash: hashPassword(password),
 		Role:         role,
+		Source:       "local",
 		CreatedAt:    time.Now(),
 	}
 
@@ -111,8 +141,56 @@ func (am *AuthManager) Authenticate(username, password string) (*Session, error)
 	am.mu.Lock()
 	defer am.mu.Unlock()
 
+	// Try LDAP authentication first if enabled
+	if am.ldapProvider != nil && am.ldapProvider.IsEnabled() {
+		ldapUser, err := am.ldapProvider.Authenticate(username, password)
+		if err == nil {
+			// LDAP auth successful - create or update local user cache
+			user, exists := am.users[username]
+			if !exists {
+				user = &User{
+					ID:          generateSessionID()[:16],
+					Username:    ldapUser.Username,
+					Email:       ldapUser.Email,
+					DisplayName: ldapUser.DisplayName,
+					Role:        ldapUser.Role,
+					Source:      "ldap",
+					CreatedAt:   time.Now(),
+				}
+				am.users[username] = user
+			} else {
+				// Update user info from LDAP
+				user.Email = ldapUser.Email
+				user.DisplayName = ldapUser.DisplayName
+				user.Role = ldapUser.Role
+				user.Source = "ldap"
+			}
+			user.LastLogin = time.Now()
+
+			// Create session
+			session := &Session{
+				ID:        generateSessionID(),
+				UserID:    user.ID,
+				Username:  user.Username,
+				Role:      user.Role,
+				Source:    "ldap",
+				CreatedAt: time.Now(),
+				ExpiresAt: time.Now().Add(am.config.SessionDuration),
+			}
+			am.sessions[session.ID] = session
+			return session, nil
+		}
+		// LDAP auth failed, fall through to local auth
+	}
+
+	// Try local authentication
 	user, exists := am.users[username]
 	if !exists {
+		return nil, fmt.Errorf("invalid credentials")
+	}
+
+	// Only allow local auth for local users
+	if user.Source != "local" && user.Source != "" {
 		return nil, fmt.Errorf("invalid credentials")
 	}
 
@@ -129,6 +207,7 @@ func (am *AuthManager) Authenticate(username, password string) (*Session, error)
 		UserID:    user.ID,
 		Username:  user.Username,
 		Role:      user.Role,
+		Source:    "local",
 		CreatedAt: time.Now(),
 		ExpiresAt: time.Now().Add(am.config.SessionDuration),
 	}
@@ -136,6 +215,76 @@ func (am *AuthManager) Authenticate(username, password string) (*Session, error)
 	am.sessions[session.ID] = session
 
 	return session, nil
+}
+
+// AuthenticateLDAP authenticates specifically against LDAP
+func (am *AuthManager) AuthenticateLDAP(username, password string) (*Session, error) {
+	if am.ldapProvider == nil || !am.ldapProvider.IsEnabled() {
+		return nil, fmt.Errorf("LDAP authentication is not enabled")
+	}
+
+	am.mu.Lock()
+	defer am.mu.Unlock()
+
+	ldapUser, err := am.ldapProvider.Authenticate(username, password)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create or update local user cache
+	user, exists := am.users[username]
+	if !exists {
+		user = &User{
+			ID:          generateSessionID()[:16],
+			Username:    ldapUser.Username,
+			Email:       ldapUser.Email,
+			DisplayName: ldapUser.DisplayName,
+			Role:        ldapUser.Role,
+			Source:      "ldap",
+			CreatedAt:   time.Now(),
+		}
+		am.users[username] = user
+	} else {
+		user.Email = ldapUser.Email
+		user.DisplayName = ldapUser.DisplayName
+		user.Role = ldapUser.Role
+		user.Source = "ldap"
+	}
+	user.LastLogin = time.Now()
+
+	session := &Session{
+		ID:        generateSessionID(),
+		UserID:    user.ID,
+		Username:  user.Username,
+		Role:      user.Role,
+		Source:    "ldap",
+		CreatedAt: time.Now(),
+		ExpiresAt: time.Now().Add(am.config.SessionDuration),
+	}
+	am.sessions[session.ID] = session
+
+	return session, nil
+}
+
+// IsLDAPEnabled returns whether LDAP is enabled
+func (am *AuthManager) IsLDAPEnabled() bool {
+	return am.ldapProvider != nil && am.ldapProvider.IsEnabled()
+}
+
+// TestLDAPConnection tests the LDAP connection
+func (am *AuthManager) TestLDAPConnection() error {
+	if am.ldapProvider == nil {
+		return fmt.Errorf("LDAP is not configured")
+	}
+	return am.ldapProvider.TestConnection()
+}
+
+// GetLDAPConfig returns the LDAP configuration (without sensitive data)
+func (am *AuthManager) GetLDAPConfig() *LDAPConfig {
+	if am.ldapProvider == nil {
+		return nil
+	}
+	return am.ldapProvider.GetConfig()
 }
 
 // ValidateSession checks if a session is valid
@@ -334,6 +483,7 @@ func (am *AuthManager) HandleCurrentUser(w http.ResponseWriter, r *http.Request)
 			"username":     "anonymous",
 			"role":         "admin",
 			"auth_enabled": false,
+			"ldap_enabled": false,
 		})
 		return
 	}
@@ -346,5 +496,47 @@ func (am *AuthManager) HandleCurrentUser(w http.ResponseWriter, r *http.Request)
 		"username":     username,
 		"role":         role,
 		"auth_enabled": true,
+		"ldap_enabled": am.IsLDAPEnabled(),
+	})
+}
+
+// HandleLDAPStatus returns LDAP configuration status
+func (am *AuthManager) HandleLDAPStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if !am.IsLDAPEnabled() {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"enabled": false,
+		})
+		return
+	}
+
+	ldapConfig := am.GetLDAPConfig()
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"enabled":      true,
+		"host":         ldapConfig.Host,
+		"port":         ldapConfig.Port,
+		"use_tls":      ldapConfig.UseTLS,
+		"base_dn":      ldapConfig.BaseDN,
+		"admin_groups": ldapConfig.AdminGroups,
+		"user_groups":  ldapConfig.UserGroups,
+	})
+}
+
+// HandleLDAPTest tests the LDAP connection
+func (am *AuthManager) HandleLDAPTest(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if err := am.TestLDAPConnection(); err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": "error",
+			"error":  err.Error(),
+		})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "ok",
 	})
 }

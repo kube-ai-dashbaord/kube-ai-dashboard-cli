@@ -20,6 +20,7 @@
 ### Web UI Dashboard
 - **Modern Web Interface**: Responsive design with resizable panels
 - **Authentication System**: Session-based authentication with user management
+- **LDAP/SSO Support**: Enterprise authentication with group-based role mapping
 - **Audit Logging**: Track all actions and AI interactions in SQLite database
 - **Reports Generation**: Cluster health, resource usage, security audit, and AI interaction reports
 - **Real-time AI Chat**: Streaming responses with syntax highlighting for commands
@@ -44,6 +45,21 @@
 ```bash
 # Build from source
 go build -o k13s ./cmd/kube-ai-dashboard-cli/main.go
+```
+
+### Docker
+
+```bash
+# Build Docker image
+docker build -t k13s:latest .
+
+# Run with Docker
+docker run -d -p 8080:8080 \
+  -v ~/.kube:/home/k13s/.kube:ro \
+  k13s:latest
+
+# Or use Docker Compose
+docker-compose up -d
 ```
 
 ### TUI Mode (Default)
@@ -112,6 +128,30 @@ log_level: debug
 - **Anthropic**: Claude models
 - **Any OpenAI-compatible API**
 
+### LDAP Configuration (Optional)
+
+```yaml
+auth:
+  enabled: true
+  ldap:
+    enabled: true
+    host: ldap.example.com
+    port: 389
+    use_tls: false
+    bind_dn: cn=admin,dc=example,dc=com
+    bind_password: secret
+    base_dn: dc=example,dc=com
+    user_search_filter: "(uid=%s)"
+    user_search_base: ou=users,dc=example,dc=com
+    group_search_base: ou=groups,dc=example,dc=com
+    admin_groups:
+      - k8s-admins
+    user_groups:
+      - k8s-users
+    viewer_groups:
+      - k8s-viewers
+```
+
 ---
 
 ## Architecture
@@ -129,6 +169,7 @@ k13s/
 │   ├── ui/         # TUI components (tview)
 │   └── web/        # Web server and API handlers
 │       ├── auth.go      # Authentication system
+│       ├── ldap.go      # LDAP/SSO integration
 │       ├── reports.go   # Report generation
 │       ├── server.go    # HTTP server
 │       └── static/      # Frontend assets
@@ -141,18 +182,20 @@ k13s/
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
+| `/api/health` | GET | Health check |
 | `/api/auth/login` | POST | User login |
 | `/api/auth/logout` | POST | User logout |
 | `/api/auth/me` | GET | Current user info |
-| `/api/namespaces` | GET | List namespaces |
-| `/api/pods` | GET | List pods |
-| `/api/deployments` | GET | List deployments |
-| `/api/services` | GET | List services |
-| `/api/ai/ask` | POST | AI query (SSE streaming) |
+| `/api/auth/ldap/status` | GET | LDAP status |
+| `/api/auth/ldap/test` | GET | Test LDAP connection |
+| `/api/k8s/namespaces` | GET | List namespaces |
+| `/api/k8s/pods` | GET | List pods |
+| `/api/k8s/deployments` | GET | List deployments |
+| `/api/k8s/services` | GET | List services |
+| `/api/chat/stream` | POST | AI query (SSE streaming) |
 | `/api/audit` | GET | Audit logs |
 | `/api/reports` | GET | Generate reports |
 | `/api/settings` | GET/PUT | Application settings |
-| `/api/health` | GET | Health check |
 
 ---
 
