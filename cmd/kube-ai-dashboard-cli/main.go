@@ -57,10 +57,8 @@ func runWebServer(cfg *config.Config, port int) {
 }
 
 func runTUI(cfg *config.Config) {
-	app := ui.NewApp()
-
 	// Initialize audit database if enabled in config
-	if app.Config.EnableAudit {
+	if cfg.EnableAudit {
 		if err := db.Init(""); err != nil {
 			log.Errorf("Failed to initialize audit database: %v", err)
 		}
@@ -75,6 +73,7 @@ func runTUI(cfg *config.Config) {
 		}
 	}()
 
+	app := ui.NewApp()
 	if err := app.Run(); err != nil {
 		log.Errorf("Application exited with error: %v", err)
 		os.Exit(1)
