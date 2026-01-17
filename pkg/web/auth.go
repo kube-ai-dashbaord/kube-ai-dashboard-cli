@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -11,6 +12,11 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	authv1 "k8s.io/api/authentication/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
 
 // User represents a user in the system
@@ -39,11 +45,13 @@ type Session struct {
 
 // AuthManager handles authentication
 type AuthManager struct {
-	users        map[string]*User    // username -> User
-	sessions     map[string]*Session // session ID -> Session
-	mu           sync.RWMutex
-	config       *AuthConfig
-	ldapProvider *LDAPProvider
+	users          map[string]*User    // username -> User
+	sessions       map[string]*Session // session ID -> Session
+	tokenSessions  map[string]*Session // K8s token -> Session (cached)
+	mu             sync.RWMutex
+	config         *AuthConfig
+	ldapProvider   *LDAPProvider
+	tokenValidator *K8sTokenValidator
 }
 
 // AuthConfig holds authentication configuration
@@ -53,14 +61,88 @@ type AuthConfig struct {
 	DefaultAdmin    string        `yaml:"default_admin" json:"default_admin"`
 	DefaultPassword string        `yaml:"default_password" json:"-"`
 	LDAP            *LDAPConfig   `yaml:"ldap" json:"ldap"`
+	// AuthMode: "token" (K8s RBAC token - default), "local" (username/password), "ldap"
+	AuthMode string `yaml:"auth_mode" json:"auth_mode"`
+}
+
+// K8sTokenValidator validates Kubernetes service account tokens
+type K8sTokenValidator struct {
+	clientset *kubernetes.Clientset
+}
+
+// NewK8sTokenValidator creates a new K8s token validator
+func NewK8sTokenValidator() (*K8sTokenValidator, error) {
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		// Fallback to kubeconfig for local development
+		return nil, err
+	}
+
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil, err
+	}
+
+	return &K8sTokenValidator{clientset: clientset}, nil
+}
+
+// ValidateToken validates a Kubernetes token and returns user info
+func (v *K8sTokenValidator) ValidateToken(ctx context.Context, token string) (*TokenReview, error) {
+	review := &authv1.TokenReview{
+		Spec: authv1.TokenReviewSpec{
+			Token: token,
+		},
+	}
+
+	result, err := v.clientset.AuthenticationV1().TokenReviews().Create(ctx, review, metav1.CreateOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("token review failed: %w", err)
+	}
+
+	if !result.Status.Authenticated {
+		return nil, fmt.Errorf("token not authenticated")
+	}
+
+	return &TokenReview{
+		Authenticated: result.Status.Authenticated,
+		Username:      result.Status.User.Username,
+		UID:           result.Status.User.UID,
+		Groups:        result.Status.User.Groups,
+	}, nil
+}
+
+// TokenReview represents the result of a token validation
+type TokenReview struct {
+	Authenticated bool     `json:"authenticated"`
+	Username      string   `json:"username"`
+	UID           string   `json:"uid"`
+	Groups        []string `json:"groups"`
 }
 
 // NewAuthManager creates a new authentication manager
 func NewAuthManager(cfg *AuthConfig) *AuthManager {
 	am := &AuthManager{
-		users:    make(map[string]*User),
-		sessions: make(map[string]*Session),
-		config:   cfg,
+		users:         make(map[string]*User),
+		sessions:      make(map[string]*Session),
+		tokenSessions: make(map[string]*Session),
+		config:        cfg,
+	}
+
+	// Set default auth mode to "token" if not specified
+	if cfg.AuthMode == "" {
+		cfg.AuthMode = "token"
+	}
+
+	// Initialize K8s token validator for token auth mode
+	if cfg.AuthMode == "token" {
+		validator, err := NewK8sTokenValidator()
+		if err != nil {
+			// Token validation may fail outside cluster, that's OK for dev mode
+			fmt.Printf("  K8s token validator: Not available (running outside cluster)\n")
+		} else {
+			am.tokenValidator = validator
+			fmt.Printf("  K8s token validator: Ready\n")
+		}
 	}
 
 	// Initialize LDAP provider if configured
@@ -68,8 +150,8 @@ func NewAuthManager(cfg *AuthConfig) *AuthManager {
 		am.ldapProvider = NewLDAPProvider(cfg.LDAP)
 	}
 
-	// Create default admin user if enabled (for local auth fallback)
-	if cfg.Enabled {
+	// Create default admin user only for local auth mode
+	if cfg.Enabled && cfg.AuthMode == "local" {
 		adminUser := cfg.DefaultAdmin
 		if adminUser == "" {
 			adminUser = "admin"
@@ -82,6 +164,11 @@ func NewAuthManager(cfg *AuthConfig) *AuthManager {
 	}
 
 	return am
+}
+
+// GetAuthMode returns the current authentication mode
+func (am *AuthManager) GetAuthMode() string {
+	return am.config.AuthMode
 }
 
 // createLocalUser creates a local user (internal use)
@@ -365,6 +452,7 @@ func (am *AuthManager) AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 		// Check for session cookie or Authorization header
 		sessionID := ""
+		token := ""
 
 		// Try cookie first
 		if cookie, err := r.Cookie("k13s_session"); err == nil {
@@ -375,8 +463,26 @@ func (am *AuthManager) AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		if sessionID == "" {
 			auth := r.Header.Get("Authorization")
 			if strings.HasPrefix(auth, "Bearer ") {
-				sessionID = strings.TrimPrefix(auth, "Bearer ")
+				token = strings.TrimPrefix(auth, "Bearer ")
 			}
+		}
+
+		// For token auth mode, try K8s token validation first
+		if am.config.AuthMode == "token" && token != "" {
+			session, err := am.ValidateK8sToken(r.Context(), token)
+			if err == nil {
+				r.Header.Set("X-User-ID", session.UserID)
+				r.Header.Set("X-Username", session.Username)
+				r.Header.Set("X-User-Role", session.Role)
+				next(w, r)
+				return
+			}
+			// Fall through to session validation
+			sessionID = token
+		}
+
+		if sessionID == "" && token != "" {
+			sessionID = token
 		}
 
 		if sessionID == "" {
@@ -399,10 +505,64 @@ func (am *AuthManager) AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// ValidateK8sToken validates a Kubernetes service account token
+func (am *AuthManager) ValidateK8sToken(ctx context.Context, token string) (*Session, error) {
+	// Check cache first
+	am.mu.RLock()
+	if session, exists := am.tokenSessions[token]; exists {
+		if time.Now().Before(session.ExpiresAt) {
+			am.mu.RUnlock()
+			return session, nil
+		}
+	}
+	am.mu.RUnlock()
+
+	// Validate with K8s API
+	if am.tokenValidator == nil {
+		return nil, fmt.Errorf("K8s token validator not available")
+	}
+
+	review, err := am.tokenValidator.ValidateToken(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+
+	// Determine role from groups
+	role := "viewer"
+	for _, group := range review.Groups {
+		if strings.Contains(group, "admin") || strings.Contains(group, "cluster-admin") {
+			role = "admin"
+			break
+		}
+		if strings.Contains(group, "edit") || strings.Contains(group, "developer") {
+			role = "user"
+		}
+	}
+
+	// Create cached session
+	session := &Session{
+		ID:        generateSessionID(),
+		UserID:    review.UID,
+		Username:  review.Username,
+		Role:      role,
+		Source:    "k8s-token",
+		CreatedAt: time.Now(),
+		ExpiresAt: time.Now().Add(am.config.SessionDuration),
+	}
+
+	// Cache the session
+	am.mu.Lock()
+	am.tokenSessions[token] = session
+	am.mu.Unlock()
+
+	return session, nil
+}
+
 // LoginRequest represents a login request
 type LoginRequest struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
+	Username string `json:"username,omitempty"`
+	Password string `json:"password,omitempty"`
+	Token    string `json:"token,omitempty"` // K8s service account token
 }
 
 // LoginResponse represents a login response
@@ -411,6 +571,7 @@ type LoginResponse struct {
 	Username  string    `json:"username"`
 	Role      string    `json:"role"`
 	ExpiresAt time.Time `json:"expires_at"`
+	AuthMode  string    `json:"auth_mode"`
 }
 
 // HandleLogin handles login requests
@@ -426,10 +587,27 @@ func (am *AuthManager) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, err := am.Authenticate(req.Username, req.Password)
-	if err != nil {
-		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
-		return
+	var session *Session
+	var err error
+
+	// Handle token-based login (K8s RBAC)
+	if req.Token != "" {
+		session, err = am.ValidateK8sToken(r.Context(), req.Token)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error": "Invalid K8s token: " + err.Error(),
+			})
+			return
+		}
+	} else {
+		// Handle username/password login (local or LDAP)
+		session, err = am.Authenticate(req.Username, req.Password)
+		if err != nil {
+			http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+			return
+		}
 	}
 
 	// Set session cookie
@@ -447,6 +625,7 @@ func (am *AuthManager) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		Username:  session.Username,
 		Role:      session.Role,
 		ExpiresAt: session.ExpiresAt,
+		AuthMode:  session.Source,
 	})
 }
 
@@ -484,6 +663,7 @@ func (am *AuthManager) HandleCurrentUser(w http.ResponseWriter, r *http.Request)
 			"role":         "admin",
 			"auth_enabled": false,
 			"ldap_enabled": false,
+			"auth_mode":    "none",
 		})
 		return
 	}
@@ -493,10 +673,12 @@ func (am *AuthManager) HandleCurrentUser(w http.ResponseWriter, r *http.Request)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"username":     username,
-		"role":         role,
-		"auth_enabled": true,
-		"ldap_enabled": am.IsLDAPEnabled(),
+		"username":        username,
+		"role":            role,
+		"auth_enabled":    true,
+		"ldap_enabled":    am.IsLDAPEnabled(),
+		"auth_mode":       am.config.AuthMode,
+		"token_available": am.tokenValidator != nil,
 	})
 }
 

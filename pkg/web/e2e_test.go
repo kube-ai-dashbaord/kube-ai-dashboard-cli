@@ -36,6 +36,7 @@ func setupTestServer(t *testing.T) (*Server, *AuthManager) {
 	authConfig := &AuthConfig{
 		Enabled:         true,
 		SessionDuration: time.Hour,
+		AuthMode:        "local", // Use local auth mode for tests
 		DefaultAdmin:    "admin",
 		DefaultPassword: "admin123",
 	}
@@ -560,6 +561,7 @@ func TestE2E_SessionExpiration(t *testing.T) {
 	authConfig := &AuthConfig{
 		Enabled:         true,
 		SessionDuration: 100 * time.Millisecond, // Very short for testing
+		AuthMode:        "local",
 		DefaultAdmin:    "admin",
 		DefaultPassword: "admin123",
 	}

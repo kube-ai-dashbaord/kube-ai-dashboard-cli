@@ -10,9 +10,11 @@ import (
 )
 
 func TestNewAuthManager(t *testing.T) {
+	// Test with "local" auth mode (creates default admin user)
 	am := NewAuthManager(&AuthConfig{
 		Enabled:         true,
 		SessionDuration: time.Hour,
+		AuthMode:        "local",
 	})
 
 	if am == nil {
@@ -34,10 +36,51 @@ func TestNewAuthManager(t *testing.T) {
 	}
 }
 
+func TestNewAuthManager_TokenMode(t *testing.T) {
+	// Test with "token" auth mode (no default admin user, K8s token auth)
+	am := NewAuthManager(&AuthConfig{
+		Enabled:         true,
+		SessionDuration: time.Hour,
+		AuthMode:        "token",
+	})
+
+	if am == nil {
+		t.Fatal("expected AuthManager to be created")
+	}
+
+	// Token mode should not create default users
+	if len(am.users) != 0 {
+		t.Errorf("expected 0 users in token mode, got %d", len(am.users))
+	}
+
+	// AuthMode should be set correctly
+	if am.GetAuthMode() != "token" {
+		t.Errorf("expected token auth mode, got %s", am.GetAuthMode())
+	}
+}
+
+func TestNewAuthManager_DefaultMode(t *testing.T) {
+	// Test with empty auth mode (should default to "token")
+	am := NewAuthManager(&AuthConfig{
+		Enabled:         true,
+		SessionDuration: time.Hour,
+	})
+
+	if am == nil {
+		t.Fatal("expected AuthManager to be created")
+	}
+
+	// Default mode should be "token"
+	if am.GetAuthMode() != "token" {
+		t.Errorf("expected default auth mode to be 'token', got %s", am.GetAuthMode())
+	}
+}
+
 func TestAuthManager_Authenticate(t *testing.T) {
 	am := NewAuthManager(&AuthConfig{
 		Enabled:         true,
 		SessionDuration: time.Hour,
+		AuthMode:        "local",
 		DefaultAdmin:    "admin",
 		DefaultPassword: "testpass",
 	})
@@ -73,6 +116,7 @@ func TestAuthManager_CreateUser(t *testing.T) {
 	am := NewAuthManager(&AuthConfig{
 		Enabled:         true,
 		SessionDuration: time.Hour,
+		AuthMode:        "local",
 	})
 
 	// Create a new user
@@ -102,6 +146,7 @@ func TestAuthManager_ValidateSession(t *testing.T) {
 	am := NewAuthManager(&AuthConfig{
 		Enabled:         true,
 		SessionDuration: time.Hour,
+		AuthMode:        "local",
 		DefaultAdmin:    "admin",
 		DefaultPassword: "admin",
 	})
@@ -130,6 +175,7 @@ func TestAuthManager_InvalidateSession(t *testing.T) {
 	am := NewAuthManager(&AuthConfig{
 		Enabled:         true,
 		SessionDuration: time.Hour,
+		AuthMode:        "local",
 		DefaultAdmin:    "admin",
 		DefaultPassword: "admin",
 	})
@@ -155,6 +201,7 @@ func TestAuthManager_HandleLogin(t *testing.T) {
 	am := NewAuthManager(&AuthConfig{
 		Enabled:         true,
 		SessionDuration: time.Hour,
+		AuthMode:        "local",
 		DefaultAdmin:    "admin",
 		DefaultPassword: "admin",
 	})
@@ -205,6 +252,7 @@ func TestAuthManager_HandleLogout(t *testing.T) {
 	am := NewAuthManager(&AuthConfig{
 		Enabled:         true,
 		SessionDuration: time.Hour,
+		AuthMode:        "local",
 		DefaultAdmin:    "admin",
 		DefaultPassword: "admin",
 	})
@@ -236,6 +284,7 @@ func TestAuthMiddleware(t *testing.T) {
 	am := NewAuthManager(&AuthConfig{
 		Enabled:         true,
 		SessionDuration: time.Hour,
+		AuthMode:        "local",
 		DefaultAdmin:    "admin",
 		DefaultPassword: "admin",
 	})
@@ -325,6 +374,7 @@ func TestAuthManager_ChangePassword(t *testing.T) {
 	am := NewAuthManager(&AuthConfig{
 		Enabled:         true,
 		SessionDuration: time.Hour,
+		AuthMode:        "local",
 		DefaultAdmin:    "admin",
 		DefaultPassword: "oldpass",
 	})
@@ -358,6 +408,7 @@ func TestAuthManager_DeleteUser(t *testing.T) {
 	am := NewAuthManager(&AuthConfig{
 		Enabled:         true,
 		SessionDuration: time.Hour,
+		AuthMode:        "local",
 	})
 
 	// Create a user to delete
@@ -386,6 +437,7 @@ func TestAuthManager_GetUsers(t *testing.T) {
 	am := NewAuthManager(&AuthConfig{
 		Enabled:         true,
 		SessionDuration: time.Hour,
+		AuthMode:        "local",
 	})
 
 	// Create additional users
@@ -395,5 +447,29 @@ func TestAuthManager_GetUsers(t *testing.T) {
 	users := am.GetUsers()
 	if len(users) != 3 { // admin + user1 + user2
 		t.Errorf("expected 3 users, got %d", len(users))
+	}
+}
+
+func TestAuthManager_HandleLogin_WithToken(t *testing.T) {
+	// Test token login request (will fail since we don't have K8s cluster)
+	am := NewAuthManager(&AuthConfig{
+		Enabled:         true,
+		SessionDuration: time.Hour,
+		AuthMode:        "token",
+	})
+
+	body, _ := json.Marshal(map[string]string{
+		"token": "fake-k8s-token",
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	am.HandleLogin(w, req)
+
+	// Should fail because K8s token validator is not available in tests
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("HandleLogin() with token status = %d, want %d (unauthorized because no K8s cluster)", w.Code, http.StatusUnauthorized)
 	}
 }

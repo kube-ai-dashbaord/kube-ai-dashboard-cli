@@ -190,6 +190,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"k8s_ready":    s.k8sClient != nil,
 		"db_ready":     db.DB != nil,
 		"auth_enabled": s.authManager.config.Enabled,
+		"auth_mode":    s.authManager.GetAuthMode(),
 		"version":      "1.0.0",
 	}
 

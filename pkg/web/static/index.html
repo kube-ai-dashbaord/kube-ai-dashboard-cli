@@ -843,6 +843,241 @@
         .action-btn.danger:hover {
             background: var(--accent-red);
         }
+
+        /* Hamburger menu button */
+        .hamburger-btn {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-around;
+            width: 24px;
+            height: 20px;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            padding: 0;
+            margin-right: 12px;
+        }
+
+        .hamburger-btn span {
+            display: block;
+            width: 100%;
+            height: 2px;
+            background: var(--text-primary);
+            border-radius: 1px;
+            transition: all 0.3s ease;
+        }
+
+        .hamburger-btn.active span:nth-child(1) {
+            transform: rotate(45deg) translate(5px, 5px);
+        }
+
+        .hamburger-btn.active span:nth-child(2) {
+            opacity: 0;
+        }
+
+        .hamburger-btn.active span:nth-child(3) {
+            transform: rotate(-45deg) translate(5px, -5px);
+        }
+
+        /* Sidebar collapsed state */
+        .sidebar.collapsed {
+            width: 0;
+            min-width: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        .sidebar-transition {
+            transition: width 0.3s ease, min-width 0.3s ease, padding 0.3s ease;
+        }
+
+        /* Token login styles */
+        .login-tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .login-tab {
+            flex: 1;
+            padding: 12px;
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .login-tab.active {
+            color: var(--accent-blue);
+            border-bottom: 2px solid var(--accent-blue);
+        }
+
+        .login-tab:hover {
+            background: var(--bg-tertiary);
+        }
+
+        .login-form {
+            display: none;
+        }
+
+        .login-form.active {
+            display: block;
+        }
+
+        .token-input {
+            width: 100%;
+            height: 120px;
+            padding: 12px;
+            margin-bottom: 16px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-family: 'SF Mono', monospace;
+            font-size: 12px;
+            resize: vertical;
+        }
+
+        .token-hint {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-bottom: 16px;
+            padding: 8px;
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+        }
+
+        .token-hint code {
+            display: block;
+            margin-top: 8px;
+            padding: 8px;
+            background: var(--bg-primary);
+            border-radius: 4px;
+            font-size: 11px;
+            word-break: break-all;
+        }
+
+        /* Add to context button */
+        .add-context-btn {
+            padding: 4px 8px;
+            background: var(--accent-purple);
+            border: none;
+            border-radius: 4px;
+            color: var(--bg-primary);
+            cursor: pointer;
+            font-size: 11px;
+            margin-left: 4px;
+        }
+
+        .add-context-btn:hover {
+            opacity: 0.9;
+        }
+
+        /* Context chips in AI panel */
+        .context-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            padding: 8px 16px;
+            border-bottom: 1px solid var(--border-color);
+            min-height: 40px;
+        }
+
+        .context-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 8px;
+            background: var(--accent-purple);
+            color: var(--bg-primary);
+            border-radius: 12px;
+            font-size: 11px;
+        }
+
+        .context-chip .remove {
+            cursor: pointer;
+            opacity: 0.7;
+        }
+
+        .context-chip .remove:hover {
+            opacity: 1;
+        }
+
+        /* Debug panel styles */
+        .debug-panel {
+            display: none;
+            border-top: 1px solid var(--border-color);
+            background: var(--bg-primary);
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .debug-panel.active {
+            display: block;
+        }
+
+        .debug-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            background: var(--bg-tertiary);
+            font-size: 11px;
+            font-weight: bold;
+        }
+
+        .debug-toggle {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 2px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 10px;
+        }
+
+        .debug-content {
+            padding: 8px 12px;
+            font-size: 11px;
+            font-family: 'SF Mono', monospace;
+        }
+
+        .debug-entry {
+            margin-bottom: 8px;
+            padding: 8px;
+            background: var(--bg-secondary);
+            border-radius: 4px;
+            border-left: 3px solid var(--accent-blue);
+        }
+
+        .debug-entry.request {
+            border-left-color: var(--accent-yellow);
+        }
+
+        .debug-entry.response {
+            border-left-color: var(--accent-green);
+        }
+
+        .debug-entry.error {
+            border-left-color: var(--accent-red);
+        }
+
+        .debug-entry-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 4px;
+            color: var(--text-secondary);
+        }
+
+        .debug-entry-body {
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 100px;
+            overflow-y: auto;
+        }
     </style>
 </head>
 <body>
@@ -851,10 +1086,28 @@
         <div class="login-box">
             <h1>k13s</h1>
             <p style="text-align: center; margin-bottom: 24px; color: var(--text-secondary);">AI Kubernetes Dashboard</p>
+            <div class="login-tabs">
+                <button class="login-tab active" onclick="switchLoginTab('token')">K8s Token</button>
+                <button class="login-tab" onclick="switchLoginTab('password')">Username/Password</button>
+            </div>
             <div class="login-error" id="login-error"></div>
-            <input type="text" id="login-username" placeholder="Username" value="admin">
-            <input type="password" id="login-password" placeholder="Password" value="admin123">
-            <button onclick="login()">Login</button>
+
+            <!-- Token Login Form -->
+            <div id="token-login-form" class="login-form active">
+                <div class="token-hint">
+                    Paste your Kubernetes service account token:
+                    <code>kubectl create token default -n default</code>
+                </div>
+                <textarea id="login-token" class="token-input" placeholder="eyJhbGciOiJSUzI1NiIs..."></textarea>
+                <button onclick="loginWithToken()">Login with Token</button>
+            </div>
+
+            <!-- Password Login Form -->
+            <div id="password-login-form" class="login-form">
+                <input type="text" id="login-username" placeholder="Username" value="admin">
+                <input type="password" id="login-password" placeholder="Password" value="admin123">
+                <button onclick="login()">Login</button>
+            </div>
         </div>
     </div>
 
@@ -862,18 +1115,25 @@
     <div class="app-container" id="app">
         <!-- Top Bar -->
         <div class="top-bar">
-            <div class="logo">
-                <svg width="24" height="24" viewBox="0 0 32 32" fill="none">
-                    <circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width="2"/>
-                    <circle cx="16" cy="16" r="4" fill="currentColor"/>
-                    <circle cx="16" cy="6" r="2" fill="currentColor"/>
-                    <circle cx="24" cy="12" r="2" fill="currentColor"/>
-                    <circle cx="24" cy="20" r="2" fill="currentColor"/>
-                    <circle cx="16" cy="26" r="2" fill="currentColor"/>
-                    <circle cx="8" cy="20" r="2" fill="currentColor"/>
-                    <circle cx="8" cy="12" r="2" fill="currentColor"/>
-                </svg>
-                k13s
+            <div style="display: flex; align-items: center;">
+                <button class="hamburger-btn" id="hamburger-btn" onclick="toggleSidebar()" title="Toggle Sidebar (B)">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </button>
+                <div class="logo">
+                    <svg width="24" height="24" viewBox="0 0 32 32" fill="none">
+                        <circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width="2"/>
+                        <circle cx="16" cy="16" r="4" fill="currentColor"/>
+                        <circle cx="16" cy="6" r="2" fill="currentColor"/>
+                        <circle cx="24" cy="12" r="2" fill="currentColor"/>
+                        <circle cx="24" cy="20" r="2" fill="currentColor"/>
+                        <circle cx="16" cy="26" r="2" fill="currentColor"/>
+                        <circle cx="8" cy="20" r="2" fill="currentColor"/>
+                        <circle cx="8" cy="12" r="2" fill="currentColor"/>
+                    </svg>
+                    k13s
+                </div>
             </div>
             <div class="search-container">
                 <span class="search-icon">🔍</span>
@@ -896,7 +1156,7 @@
         <!-- Main Content -->
         <div class="main-container">
             <!-- Sidebar -->
-            <div class="sidebar">
+            <div class="sidebar sidebar-transition" id="sidebar">
                 <div class="nav-section">
                     <div class="nav-title">Workloads</div>
                     <div class="nav-item active" data-resource="pods" onclick="switchResource('pods')">
@@ -907,9 +1167,69 @@
                         <span>Deployments</span>
                         <span class="count" id="deployments-count">0</span>
                     </div>
+                    <div class="nav-item" data-resource="daemonsets" onclick="switchResource('daemonsets')">
+                        <span>DaemonSets</span>
+                        <span class="count" id="daemonsets-count">0</span>
+                    </div>
+                    <div class="nav-item" data-resource="statefulsets" onclick="switchResource('statefulsets')">
+                        <span>StatefulSets</span>
+                        <span class="count" id="statefulsets-count">0</span>
+                    </div>
+                    <div class="nav-item" data-resource="replicasets" onclick="switchResource('replicasets')">
+                        <span>ReplicaSets</span>
+                        <span class="count" id="replicasets-count">0</span>
+                    </div>
+                    <div class="nav-item" data-resource="jobs" onclick="switchResource('jobs')">
+                        <span>Jobs</span>
+                        <span class="count" id="jobs-count">0</span>
+                    </div>
+                    <div class="nav-item" data-resource="cronjobs" onclick="switchResource('cronjobs')">
+                        <span>CronJobs</span>
+                        <span class="count" id="cronjobs-count">0</span>
+                    </div>
+                </div>
+
+                <div class="nav-section">
+                    <div class="nav-title">Network</div>
                     <div class="nav-item" data-resource="services" onclick="switchResource('services')">
                         <span>Services</span>
                         <span class="count" id="services-count">0</span>
+                    </div>
+                    <div class="nav-item" data-resource="ingresses" onclick="switchResource('ingresses')">
+                        <span>Ingresses</span>
+                        <span class="count" id="ingresses-count">0</span>
+                    </div>
+                    <div class="nav-item" data-resource="networkpolicies" onclick="switchResource('networkpolicies')">
+                        <span>NetworkPolicies</span>
+                        <span class="count" id="networkpolicies-count">0</span>
+                    </div>
+                </div>
+
+                <div class="nav-section">
+                    <div class="nav-title">Config</div>
+                    <div class="nav-item" data-resource="configmaps" onclick="switchResource('configmaps')">
+                        <span>ConfigMaps</span>
+                        <span class="count" id="configmaps-count">0</span>
+                    </div>
+                    <div class="nav-item" data-resource="secrets" onclick="switchResource('secrets')">
+                        <span>Secrets</span>
+                        <span class="count" id="secrets-count">0</span>
+                    </div>
+                    <div class="nav-item" data-resource="serviceaccounts" onclick="switchResource('serviceaccounts')">
+                        <span>ServiceAccounts</span>
+                        <span class="count" id="serviceaccounts-count">0</span>
+                    </div>
+                </div>
+
+                <div class="nav-section">
+                    <div class="nav-title">Storage</div>
+                    <div class="nav-item" data-resource="persistentvolumes" onclick="switchResource('persistentvolumes')">
+                        <span>PersistentVolumes</span>
+                        <span class="count" id="persistentvolumes-count">0</span>
+                    </div>
+                    <div class="nav-item" data-resource="persistentvolumeclaims" onclick="switchResource('persistentvolumeclaims')">
+                        <span>PVCs</span>
+                        <span class="count" id="persistentvolumeclaims-count">0</span>
                     </div>
                 </div>
 
@@ -926,6 +1246,26 @@
                     <div class="nav-item" data-resource="events" onclick="switchResource('events')">
                         <span>Events</span>
                         <span class="count" id="events-count">0</span>
+                    </div>
+                </div>
+
+                <div class="nav-section">
+                    <div class="nav-title">RBAC</div>
+                    <div class="nav-item" data-resource="roles" onclick="switchResource('roles')">
+                        <span>Roles</span>
+                        <span class="count" id="roles-count">0</span>
+                    </div>
+                    <div class="nav-item" data-resource="rolebindings" onclick="switchResource('rolebindings')">
+                        <span>RoleBindings</span>
+                        <span class="count" id="rolebindings-count">0</span>
+                    </div>
+                    <div class="nav-item" data-resource="clusterroles" onclick="switchResource('clusterroles')">
+                        <span>ClusterRoles</span>
+                        <span class="count" id="clusterroles-count">0</span>
+                    </div>
+                    <div class="nav-item" data-resource="clusterrolebindings" onclick="switchResource('clusterrolebindings')">
+                        <span>ClusterRoleBindings</span>
+                        <span class="count" id="clusterrolebindings-count">0</span>
                     </div>
                 </div>
 
@@ -975,6 +1315,11 @@
                     <div class="ai-header">
                         <span>AI Assistant</span>
                         <span class="ai-badge">GPT</span>
+                        <button class="debug-toggle" id="debug-toggle" onclick="toggleDebugMode()" style="margin-left: auto;" title="Toggle Debug Mode">🐛 Debug</button>
+                    </div>
+                    <!-- Context chips for selected resources -->
+                    <div class="context-chips" id="context-chips">
+                        <span style="font-size: 11px; color: var(--text-secondary);">Context: Click resources to add</span>
                     </div>
                     <div class="ai-messages" id="ai-messages">
                         <div class="message assistant">
@@ -985,6 +1330,20 @@
                                 <br>- "Show me all pods"
                                 <br>- "Create an nginx pod"
                                 <br>- "Scale deployment to 3 replicas"
+                                <br><br>
+                                <strong>Tip:</strong> Click any resource row to add it as context for AI analysis!
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Debug panel for MCP Tool Calling -->
+                    <div class="debug-panel" id="debug-panel">
+                        <div class="debug-header">
+                            <span>🔧 MCP Tool Calling Debug</span>
+                            <button class="debug-toggle" onclick="clearDebugLogs()">Clear</button>
+                        </div>
+                        <div class="debug-content" id="debug-content">
+                            <div style="color: var(--text-secondary); text-align: center; padding: 20px;">
+                                Debug mode active. Tool calls will appear here.
                             </div>
                         </div>
                     </div>
@@ -1118,6 +1477,14 @@
                         <span class="shortcut-key">A</span>
                     </div>
                     <div class="shortcut-item">
+                        <span>Toggle Sidebar</span>
+                        <span class="shortcut-key">B</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <span>Toggle Debug Mode</span>
+                        <span class="shortcut-key">D</span>
+                    </div>
+                    <div class="shortcut-item">
                         <span>View Pods</span>
                         <span class="shortcut-key">1</span>
                     </div>
@@ -1142,12 +1509,16 @@
                         <span class="shortcut-key">?</span>
                     </div>
                     <div class="shortcut-item">
+                        <span>Toggle Theme</span>
+                        <span class="shortcut-key">T</span>
+                    </div>
+                    <div class="shortcut-item">
                         <span>Close Modal</span>
                         <span class="shortcut-key">Esc</span>
                     </div>
                     <div class="shortcut-item">
-                        <span>Toggle Theme</span>
-                        <span class="shortcut-key">T</span>
+                        <span>Add to AI Context</span>
+                        <span class="shortcut-key">Right-click row</span>
                     </div>
                 </div>
             </div>
@@ -1164,16 +1535,48 @@
         let isLoading = false;
         let authToken = localStorage.getItem('k13s_token');
         let currentUser = null;
+        let sidebarCollapsed = localStorage.getItem('k13s_sidebar_collapsed') === 'true';
+        let debugMode = localStorage.getItem('k13s_debug_mode') === 'true';
+        let aiContextItems = []; // Resources added as context for AI
 
-        // Table headers
+        // Table headers for all resource types
         const tableHeaders = {
             pods: ['NAME', 'NAMESPACE', 'READY', 'STATUS', 'RESTARTS', 'AGE', 'IP'],
             deployments: ['NAME', 'NAMESPACE', 'READY', 'UP-TO-DATE', 'AVAILABLE', 'AGE'],
+            daemonsets: ['NAME', 'NAMESPACE', 'DESIRED', 'CURRENT', 'READY', 'AGE'],
+            statefulsets: ['NAME', 'NAMESPACE', 'READY', 'AGE'],
+            replicasets: ['NAME', 'NAMESPACE', 'DESIRED', 'CURRENT', 'READY', 'AGE'],
+            jobs: ['NAME', 'NAMESPACE', 'COMPLETIONS', 'DURATION', 'AGE'],
+            cronjobs: ['NAME', 'NAMESPACE', 'SCHEDULE', 'SUSPEND', 'ACTIVE', 'LAST SCHEDULE'],
             services: ['NAME', 'NAMESPACE', 'TYPE', 'CLUSTER-IP', 'PORTS', 'AGE'],
+            ingresses: ['NAME', 'NAMESPACE', 'CLASS', 'HOSTS', 'ADDRESS', 'AGE'],
+            networkpolicies: ['NAME', 'NAMESPACE', 'POD-SELECTOR', 'AGE'],
+            configmaps: ['NAME', 'NAMESPACE', 'DATA', 'AGE'],
+            secrets: ['NAME', 'NAMESPACE', 'TYPE', 'DATA', 'AGE'],
+            serviceaccounts: ['NAME', 'NAMESPACE', 'SECRETS', 'AGE'],
+            persistentvolumes: ['NAME', 'CAPACITY', 'ACCESS MODES', 'RECLAIM POLICY', 'STATUS', 'CLAIM'],
+            persistentvolumeclaims: ['NAME', 'NAMESPACE', 'STATUS', 'VOLUME', 'CAPACITY', 'ACCESS MODES'],
             nodes: ['NAME', 'STATUS', 'ROLES', 'VERSION', 'AGE'],
             namespaces: ['NAME', 'STATUS', 'AGE'],
-            events: ['NAME', 'TYPE', 'REASON', 'MESSAGE', 'COUNT', 'LAST SEEN']
+            events: ['NAME', 'TYPE', 'REASON', 'MESSAGE', 'COUNT', 'LAST SEEN'],
+            roles: ['NAME', 'NAMESPACE', 'AGE'],
+            rolebindings: ['NAME', 'NAMESPACE', 'ROLE', 'AGE'],
+            clusterroles: ['NAME', 'AGE'],
+            clusterrolebindings: ['NAME', 'ROLE', 'AGE']
         };
+
+        // All supported resource types
+        const allResources = [
+            'pods', 'deployments', 'daemonsets', 'statefulsets', 'replicasets', 'jobs', 'cronjobs',
+            'services', 'ingresses', 'networkpolicies',
+            'configmaps', 'secrets', 'serviceaccounts',
+            'persistentvolumes', 'persistentvolumeclaims',
+            'nodes', 'namespaces', 'events',
+            'roles', 'rolebindings', 'clusterroles', 'clusterrolebindings'
+        ];
+
+        // Cluster-scoped resources (no namespace)
+        const clusterScopedResources = ['nodes', 'namespaces', 'persistentvolumes', 'clusterroles', 'clusterrolebindings'];
 
         // Initialize
         async function init() {
@@ -1213,12 +1616,66 @@
             if (currentUser) {
                 document.getElementById('user-badge').textContent = currentUser.username;
             }
+            // Restore sidebar state
+            if (sidebarCollapsed) {
+                document.getElementById('sidebar').classList.add('collapsed');
+                document.getElementById('hamburger-btn').classList.add('active');
+            }
+            // Restore debug mode
+            if (debugMode) {
+                document.getElementById('debug-panel').classList.add('active');
+                document.getElementById('debug-toggle').style.background = 'var(--accent-purple)';
+            }
             loadNamespaces();
             loadData();
             setupResizeHandle();
             setupHealthCheck();
         }
 
+        // Login tab switching
+        function switchLoginTab(tab) {
+            document.querySelectorAll('.login-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.login-form').forEach(f => f.classList.remove('active'));
+
+            if (tab === 'token') {
+                document.querySelector('.login-tab:first-child').classList.add('active');
+                document.getElementById('token-login-form').classList.add('active');
+            } else {
+                document.querySelector('.login-tab:last-child').classList.add('active');
+                document.getElementById('password-login-form').classList.add('active');
+            }
+        }
+
+        // Token-based login (K8s RBAC)
+        async function loginWithToken() {
+            const token = document.getElementById('login-token').value.trim();
+            if (!token) {
+                document.getElementById('login-error').textContent = 'Please enter a token';
+                return;
+            }
+
+            try {
+                const resp = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token })
+                });
+
+                const data = await resp.json();
+                if (resp.ok) {
+                    authToken = data.token;
+                    localStorage.setItem('k13s_token', authToken);
+                    currentUser = { username: data.username, role: data.role };
+                    showApp();
+                } else {
+                    document.getElementById('login-error').textContent = data.error || 'Invalid token';
+                }
+            } catch (e) {
+                document.getElementById('login-error').textContent = 'Login failed: ' + e.message;
+            }
+        }
+
+        // Username/password login
         async function login() {
             const username = document.getElementById('login-username').value;
             const password = document.getElementById('login-password').value;
@@ -1277,10 +1734,10 @@
         }
 
         async function loadData() {
-            const resources = ['pods', 'deployments', 'services', 'nodes', 'namespaces', 'events'];
-            for (const resource of resources) {
+            for (const resource of allResources) {
                 try {
-                    const ns = (resource === 'nodes' || resource === 'namespaces') ? '' : currentNamespace;
+                    const isClusterScoped = clusterScopedResources.includes(resource);
+                    const ns = isClusterScoped ? '' : currentNamespace;
                     const url = ns ? `/api/k8s/${resource}?namespace=${ns}` : `/api/k8s/${resource}`;
                     const resp = await fetchWithAuth(url);
                     const data = await resp.json();
@@ -1732,6 +2189,14 @@
                     e.preventDefault();
                     toggleAIPanel();
                     break;
+                case 'b':
+                    e.preventDefault();
+                    toggleSidebar();
+                    break;
+                case 'd':
+                    e.preventDefault();
+                    toggleDebugMode();
+                    break;
                 case '1':
                     e.preventDefault();
                     switchResource('pods');
@@ -1855,6 +2320,215 @@
             cachedData = items || [];
             originalRenderTable(resource, items);
             addRowClickHandlers();
+        };
+
+        // ==========================================
+        // Sidebar Toggle
+        // ==========================================
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const hamburger = document.getElementById('hamburger-btn');
+            sidebarCollapsed = !sidebarCollapsed;
+
+            sidebar.classList.toggle('collapsed', sidebarCollapsed);
+            hamburger.classList.toggle('active', sidebarCollapsed);
+            localStorage.setItem('k13s_sidebar_collapsed', sidebarCollapsed);
+        }
+
+        // ==========================================
+        // Debug Mode (MCP Tool Calling)
+        // ==========================================
+        let debugLogs = [];
+
+        function toggleDebugMode() {
+            debugMode = !debugMode;
+            const panel = document.getElementById('debug-panel');
+            const toggle = document.getElementById('debug-toggle');
+
+            panel.classList.toggle('active', debugMode);
+            toggle.style.background = debugMode ? 'var(--accent-purple)' : 'transparent';
+            localStorage.setItem('k13s_debug_mode', debugMode);
+        }
+
+        function addDebugLog(type, title, content) {
+            if (!debugMode) return;
+
+            const timestamp = new Date().toLocaleTimeString();
+            debugLogs.push({ type, title, content, timestamp });
+
+            const container = document.getElementById('debug-content');
+            const entry = document.createElement('div');
+            entry.className = `debug-entry ${type}`;
+            entry.innerHTML = `
+                <div class="debug-entry-header">
+                    <span>${title}</span>
+                    <span>${timestamp}</span>
+                </div>
+                <div class="debug-entry-body">${typeof content === 'object' ? JSON.stringify(content, null, 2) : content}</div>
+            `;
+            container.appendChild(entry);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function clearDebugLogs() {
+            debugLogs = [];
+            document.getElementById('debug-content').innerHTML = `
+                <div style="color: var(--text-secondary); text-align: center; padding: 20px;">
+                    Debug logs cleared. Tool calls will appear here.
+                </div>
+            `;
+        }
+
+        // ==========================================
+        // AI Context Management
+        // ==========================================
+        function addToAIContext(item) {
+            // Check if already exists
+            const exists = aiContextItems.find(i => i.name === item.name && i.namespace === item.namespace);
+            if (exists) return;
+
+            aiContextItems.push({
+                type: currentResource,
+                name: item.name,
+                namespace: item.namespace || '',
+                data: item
+            });
+
+            renderContextChips();
+        }
+
+        function removeFromAIContext(index) {
+            aiContextItems.splice(index, 1);
+            renderContextChips();
+        }
+
+        function clearAIContext() {
+            aiContextItems = [];
+            renderContextChips();
+        }
+
+        function renderContextChips() {
+            const container = document.getElementById('context-chips');
+            if (aiContextItems.length === 0) {
+                container.innerHTML = '<span style="font-size: 11px; color: var(--text-secondary);">Context: Click resources to add</span>';
+                return;
+            }
+
+            container.innerHTML = aiContextItems.map((item, index) => `
+                <span class="context-chip">
+                    ${item.type.slice(0, -1)}: ${item.name}
+                    <span class="remove" onclick="event.stopPropagation(); removeFromAIContext(${index})">×</span>
+                </span>
+            `).join('') + `<span class="context-chip" style="background: var(--bg-tertiary); cursor: pointer;" onclick="clearAIContext()">Clear all</span>`;
+        }
+
+        function getContextForAI() {
+            if (aiContextItems.length === 0) return '';
+
+            return '\n\nContext from selected resources:\n' + aiContextItems.map(item => {
+                return `[${item.type}] ${item.name}${item.namespace ? ` (ns: ${item.namespace})` : ''}: ${JSON.stringify(item.data)}`;
+            }).join('\n');
+        }
+
+        // Update addRowClickHandlers to support right-click for context
+        function addRowClickHandlers() {
+            document.querySelectorAll('#table-body tr').forEach((row, index) => {
+                // Left click - show detail modal
+                row.onclick = () => {
+                    const item = cachedData[index];
+                    if (item) {
+                        showResourceDetail(item);
+                    }
+                };
+
+                // Right click - add to AI context
+                row.oncontextmenu = (e) => {
+                    e.preventDefault();
+                    const item = cachedData[index];
+                    if (item) {
+                        addToAIContext(item);
+                        // Visual feedback
+                        row.style.background = 'var(--accent-purple)';
+                        setTimeout(() => {
+                            row.style.background = '';
+                        }, 200);
+                    }
+                };
+
+                // Add button to row for adding context
+                const firstCell = row.querySelector('td:first-child');
+                if (firstCell && !firstCell.querySelector('.add-context-btn')) {
+                    const btn = document.createElement('button');
+                    btn.className = 'add-context-btn';
+                    btn.textContent = '+AI';
+                    btn.title = 'Add to AI context';
+                    btn.onclick = (e) => {
+                        e.stopPropagation();
+                        const item = cachedData[index];
+                        if (item) {
+                            addToAIContext(item);
+                        }
+                    };
+                    firstCell.prepend(btn);
+                    firstCell.prepend(document.createTextNode(' '));
+                }
+            });
+        }
+
+        // Override sendMessage to include context
+        const originalSendMessage = sendMessage;
+        sendMessage = async function() {
+            const input = document.getElementById('ai-input');
+            let message = input.value.trim();
+            if (!message || isLoading) return;
+
+            // Add context if available
+            const contextStr = getContextForAI();
+            if (contextStr) {
+                message += contextStr;
+            }
+
+            // Log request in debug mode
+            addDebugLog('request', 'AI Request', { message, context: aiContextItems });
+
+            isLoading = true;
+            document.getElementById('send-btn').disabled = true;
+            input.value = '';
+
+            addMessage(input.value || message.split('\n\nContext from selected resources:')[0], true);
+            addLoadingMessage();
+
+            try {
+                const startTime = Date.now();
+                const resp = await fetchWithAuth('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message })
+                });
+
+                removeLoadingMessage();
+                const data = await resp.json();
+                const duration = Date.now() - startTime;
+
+                if (data.error) {
+                    addDebugLog('error', 'AI Error', { error: data.error, duration: `${duration}ms` });
+                    addMessage(`Error: ${data.error}`);
+                } else {
+                    addDebugLog('response', 'AI Response', {
+                        response: data.response.substring(0, 200) + '...',
+                        duration: `${duration}ms`,
+                        tokens: data.response.length // rough estimate
+                    });
+                    addMessage(data.response);
+                }
+            } catch (e) {
+                removeLoadingMessage();
+                addDebugLog('error', 'Network Error', { error: e.message });
+                addMessage(`Error: ${e.message}`);
+            }
+
+            isLoading = false;
+            document.getElementById('send-btn').disabled = false;
         };
 
         // Init
