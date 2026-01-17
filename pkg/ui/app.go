@@ -1101,11 +1101,36 @@ func (a *App) setupKeybindings() {
 			case 'n':
 				a.cycleNamespace()
 				return nil
-			case '0':
-				a.selectNamespaceByNumber(0) // All namespaces
+			// k9s style: number keys switch resource types
+			case '1':
+				a.setResource("pods") // 1 = Pods
 				return nil
-			case '1', '2', '3', '4', '5', '6', '7', '8', '9':
-				a.selectNamespaceByNumber(int(event.Rune() - '0'))
+			case '2':
+				a.setResource("deployments") // 2 = Deployments
+				return nil
+			case '3':
+				a.setResource("services") // 3 = Services
+				return nil
+			case '4':
+				a.setResource("nodes") // 4 = Nodes
+				return nil
+			case '5':
+				a.setResource("namespaces") // 5 = Namespaces
+				return nil
+			case '6':
+				a.setResource("events") // 6 = Events
+				return nil
+			case '7':
+				a.setResource("configmaps") // 7 = ConfigMaps
+				return nil
+			case '8':
+				a.setResource("secrets") // 8 = Secrets
+				return nil
+			case '9':
+				a.setResource("ingresses") // 9 = Ingresses
+				return nil
+			case '0':
+				a.setResource("persistentvolumeclaims") // 0 = PVCs
 				return nil
 			case 'l':
 				a.showLogs()
@@ -1356,26 +1381,37 @@ func (a *App) updateStatusBar() {
 	resource := a.currentResource
 	a.mx.RUnlock()
 
-	// Base shortcuts
-	shortcuts := " [black]<Enter>[white]Drill [black]<Esc>[white]Back [black]/[white]Filter [black]d[white]Describe [black]y[white]YAML"
+	// k9s style: resource shortcuts at the beginning
+	resourceHints := "[yellow]1[white]Pod [yellow]2[white]Deploy [yellow]3[white]Svc [yellow]4[white]Node [yellow]5[white]NS [yellow]6[white]Event [yellow]7[white]CM [yellow]8[white]Secret [yellow]9[white]Ing [yellow]0[white]PVC"
 
-	// Resource-specific shortcuts
+	// Highlight current resource
 	switch resource {
 	case "pods", "po":
-		shortcuts += " [black]l[white]Logs [black]s[white]Shell [black]a[white]Attach [black]o[white]Node [black]k[white]Kill"
-	case "deployments", "deploy", "statefulsets", "sts", "daemonsets", "ds":
-		shortcuts += " [black]S[white]Scale [black]R[white]Restart [black]z[white]ReplicaSets"
-	case "cronjobs", "cj":
-		shortcuts += " [black]t[white]Trigger"
+		resourceHints = "[green::b]1[white::b]Pod[-:-:-] [yellow]2[white]Deploy [yellow]3[white]Svc [yellow]4[white]Node [yellow]5[white]NS [yellow]6[white]Event [yellow]7[white]CM [yellow]8[white]Secret [yellow]9[white]Ing [yellow]0[white]PVC"
+	case "deployments", "deploy":
+		resourceHints = "[yellow]1[white]Pod [green::b]2[white::b]Deploy[-:-:-] [yellow]3[white]Svc [yellow]4[white]Node [yellow]5[white]NS [yellow]6[white]Event [yellow]7[white]CM [yellow]8[white]Secret [yellow]9[white]Ing [yellow]0[white]PVC"
 	case "services", "svc":
-		shortcuts += " [black]F[white]Port-Fwd"
+		resourceHints = "[yellow]1[white]Pod [yellow]2[white]Deploy [green::b]3[white::b]Svc[-:-:-] [yellow]4[white]Node [yellow]5[white]NS [yellow]6[white]Event [yellow]7[white]CM [yellow]8[white]Secret [yellow]9[white]Ing [yellow]0[white]PVC"
+	case "nodes", "no":
+		resourceHints = "[yellow]1[white]Pod [yellow]2[white]Deploy [yellow]3[white]Svc [green::b]4[white::b]Node[-:-:-] [yellow]5[white]NS [yellow]6[white]Event [yellow]7[white]CM [yellow]8[white]Secret [yellow]9[white]Ing [yellow]0[white]PVC"
 	case "namespaces", "ns":
-		shortcuts += " [black]u[white]Use"
+		resourceHints = "[yellow]1[white]Pod [yellow]2[white]Deploy [yellow]3[white]Svc [yellow]4[white]Node [green::b]5[white::b]NS[-:-:-] [yellow]6[white]Event [yellow]7[white]CM [yellow]8[white]Secret [yellow]9[white]Ing [yellow]0[white]PVC"
+	case "events", "ev":
+		resourceHints = "[yellow]1[white]Pod [yellow]2[white]Deploy [yellow]3[white]Svc [yellow]4[white]Node [yellow]5[white]NS [green::b]6[white::b]Event[-:-:-] [yellow]7[white]CM [yellow]8[white]Secret [yellow]9[white]Ing [yellow]0[white]PVC"
+	case "configmaps", "cm":
+		resourceHints = "[yellow]1[white]Pod [yellow]2[white]Deploy [yellow]3[white]Svc [yellow]4[white]Node [yellow]5[white]NS [yellow]6[white]Event [green::b]7[white::b]CM[-:-:-] [yellow]8[white]Secret [yellow]9[white]Ing [yellow]0[white]PVC"
+	case "secrets":
+		resourceHints = "[yellow]1[white]Pod [yellow]2[white]Deploy [yellow]3[white]Svc [yellow]4[white]Node [yellow]5[white]NS [yellow]6[white]Event [yellow]7[white]CM [green::b]8[white::b]Secret[-:-:-] [yellow]9[white]Ing [yellow]0[white]PVC"
+	case "ingresses", "ing":
+		resourceHints = "[yellow]1[white]Pod [yellow]2[white]Deploy [yellow]3[white]Svc [yellow]4[white]Node [yellow]5[white]NS [yellow]6[white]Event [yellow]7[white]CM [yellow]8[white]Secret [green::b]9[white::b]Ing[-:-:-] [yellow]0[white]PVC"
+	case "persistentvolumeclaims", "pvc":
+		resourceHints = "[yellow]1[white]Pod [yellow]2[white]Deploy [yellow]3[white]Svc [yellow]4[white]Node [yellow]5[white]NS [yellow]6[white]Event [yellow]7[white]CM [yellow]8[white]Secret [yellow]9[white]Ing [green::b]0[white::b]PVC[-:-:-]"
 	}
 
-	shortcuts += " | [black]e[white]Edit [black]^D[white]Del [black]:[white]Cmd [black]?[white]Help [black]q[white]Quit"
+	// Context shortcuts
+	shortcuts := " [gray]|[white] [black]n[white]NS [black]/[white]Filter [black]:[white]Cmd [black]?[white]Help [black]q[white]Quit"
 
-	a.statusBar.SetText(shortcuts)
+	a.statusBar.SetText(resourceHints + shortcuts)
 }
 
 // prepareContext cancels previous operations and creates new context (k9s pattern)
