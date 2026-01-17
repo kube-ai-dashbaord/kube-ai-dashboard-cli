@@ -15,6 +15,7 @@ default_agent: "@dev-agent"
 > - `/SUPPORT.md` - Support policy
 > - `/SECURITY.md` - Security policy
 > - `/CODE_OF_CONDUCT.md` - Code of conduct
+> - `/docs/TUI_TESTING_STRATEGY.md` - TUI testing strategy for AI agents
 >
 > **Build/Config files:**
 > - `/go.mod` - Go version (1.25.0) and dependencies

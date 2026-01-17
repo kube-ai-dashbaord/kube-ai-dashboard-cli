@@ -2,28 +2,93 @@
 
 Welcome to the **k13s** user guide! This document will help you master the ultimate Kubernetes AI Explorer.
 
-## ⌨️ Core Navigation
+## Core Navigation
 
 k13s uses Vim-style navigation and intuitive shortcuts to keep your hands on the keyboard.
 
-- **j / k**: Move selection up/down in the dashboard.
-- **Left / Right / Tab**: Switch focus between the Dashboard (left) and AI Assistant (right).
-- **Ctrl+H / Ctrl+L**: Resize the panels to your preference.
-- **ESC**: Close any modal or return to the main view.
+| Key | Action |
+|-----|--------|
+| `j` / `k` | Move selection up/down |
+| `g` | Jump to top of list |
+| `G` | Jump to bottom of list |
+| `Ctrl+U` | Page up (10 rows) |
+| `Ctrl+F` | Page down (10 rows) |
+| `Left` / `Right` / `Tab` | Switch focus between Dashboard and AI Assistant |
+| `Ctrl+H` / `Ctrl+L` | Resize panels |
+| `0-9` | Quick namespace switch |
+| `ESC` | Close modal / Clear filter / Return to main view |
 
-## 🚀 Dashboard Actions
+## Resource Commands
 
-- **:** : Switch resources (e.g., type `:pods`, `:svc`, `:deploy`).
-- **/** : Filter the current table in real-time.
-- **y** : View the full YAML manifest of the selected resource.
-- **l** : Stream real-time logs (works for Pods).
-- **d** : **Native Describe** - View a detailed textual status of the resource.
-- **L** : **AI Analyze** - Send the resource context to the AI for intelligent debugging.
-- **h** : **Explain This** - Get a pedagogical explanation (great for beginners!).
-- **s** : Scale replicas (Deployments/StatefulSets).
-- **r** : Trigger a Rollout Restart.
-- **Shift+F** : Setup Port Forwarding.
-- **Ctrl+D** : Delete the selected resource (with confirmation).
+Switch between resources using the command bar (`:` prefix):
+
+| Command | Resource |
+|---------|----------|
+| `:pods` or `:po` | Pods |
+| `:deploy` or `:deployments` | Deployments |
+| `:svc` or `:services` | Services |
+| `:ds` or `:daemonsets` | DaemonSets |
+| `:sts` or `:statefulsets` | StatefulSets |
+| `:jobs` | Jobs |
+| `:cj` or `:cronjobs` | CronJobs |
+| `:hpa` | Horizontal Pod Autoscalers |
+| `:netpol` or `:networkpolicies` | Network Policies |
+| `:cm` or `:configmaps` | ConfigMaps |
+| `:secrets` | Secrets |
+| `:ing` or `:ingresses` | Ingresses |
+| `:pv` | Persistent Volumes |
+| `:pvc` | Persistent Volume Claims |
+| `:sc` or `:storageclasses` | Storage Classes |
+| `:sa` or `:serviceaccounts` | Service Accounts |
+| `:roles` | Roles |
+| `:rb` or `:rolebindings` | Role Bindings |
+| `:clusterroles` | Cluster Roles |
+| `:crb` | Cluster Role Bindings |
+| `:nodes` or `:no` | Nodes |
+| `:ns` or `:namespaces` | Namespaces |
+| `:ctx` or `:contexts` | Kubernetes Contexts |
+| `:events` or `:ev` | Events |
+
+## Dashboard Actions
+
+| Key | Action |
+|-----|--------|
+| `/` | Filter current table (supports regex: `/pattern/`) |
+| `y` | View YAML manifest |
+| `l` | Stream logs (Pods) |
+| `d` | Native Describe |
+| `L` | AI Analyze - Send resource context to AI |
+| `h` | Explain This - Pedagogical AI explanation |
+| `S` | Scale replicas (Deployments/StatefulSets/DaemonSets) |
+| `r` | Rollout Restart |
+| `F` | Port Forwarding setup |
+| `Ctrl+D` | Delete resource (with confirmation) |
+
+## Multi-Select
+
+Select multiple resources for bulk operations:
+
+| Key | Action |
+|-----|--------|
+| `Space` | Toggle selection on current row |
+| `Ctrl+Space` | Clear all selections |
+
+Selected rows are marked with `●` and highlighted in cyan.
+
+## Filtering
+
+### Substring Filter
+Type `/` followed by text to filter:
+```
+/nginx
+```
+
+### Regex Filter
+Use `/pattern/` for regex matching:
+```
+/nginx-[0-9]+/
+/^api-.*/
+```
 
 ## 🤖 AI Assistant Synergy
 

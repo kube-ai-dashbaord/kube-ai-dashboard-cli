@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -46,6 +47,7 @@ type Dashboard struct {
 	Filter             string
 	isRefreshing       atomic.Bool
 	QuickNamespaces    []string
+	SelectedRows       map[int]bool // Multi-select: tracks selected row indices
 }
 
 func NewDashboard(app *tview.Application, k8sClient *k8s.Client, onSelected func(string), onSelectionChanged func(string), onLogs func(namespace, name string)) *Dashboard {
@@ -58,6 +60,7 @@ func NewDashboard(app *tview.Application, k8sClient *k8s.Client, onSelected func
 		OnSelected:         onSelected,
 		OnSelectionChanged: onSelectionChanged,
 		OnLogs:             onLogs,
+		SelectedRows:       make(map[int]bool),
 	}
 	d.Root.SetBorder(true).SetTitle(fmt.Sprintf(" %s (%s) ", i18n.T("dashboard_pods"), "pods"))
 
@@ -123,6 +126,65 @@ func NewDashboard(app *tview.Application, k8sClient *k8s.Client, onSelected func
 		if event.Rune() == 'k' {
 			return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
 		}
+
+		// g - Go to top of list
+		if event.Rune() == 'g' {
+			d.Root.ScrollToBeginning()
+			d.Root.Select(1, 0) // Skip header row
+			return nil
+		}
+
+		// G - Go to bottom of list
+		if event.Rune() == 'G' {
+			d.Root.ScrollToEnd()
+			rowCount := d.Root.GetRowCount()
+			if rowCount > 1 {
+				d.Root.Select(rowCount-1, 0)
+			}
+			return nil
+		}
+
+		// Ctrl+U - Page up (move up 10 rows)
+		if event.Key() == tcell.KeyCtrlU {
+			row, col := d.Root.GetSelection()
+			newRow := row - 10
+			if newRow < 1 {
+				newRow = 1 // Skip header
+			}
+			d.Root.Select(newRow, col)
+			return nil
+		}
+
+		// Ctrl+F - Page down (move down 10 rows)
+		if event.Key() == tcell.KeyCtrlF {
+			row, col := d.Root.GetSelection()
+			rowCount := d.Root.GetRowCount()
+			newRow := row + 10
+			if newRow >= rowCount {
+				newRow = rowCount - 1
+			}
+			if newRow < 1 {
+				newRow = 1
+			}
+			d.Root.Select(newRow, col)
+			return nil
+		}
+
+		// Space - Toggle multi-select on current row
+		if event.Rune() == ' ' {
+			row, _ := d.Root.GetSelection()
+			if row > 0 { // Skip header
+				d.toggleRowSelection(row)
+			}
+			return nil
+		}
+
+		// Ctrl+Space - Clear all selections
+		if event.Key() == tcell.KeyCtrlSpace {
+			d.clearAllSelections()
+			return nil
+		}
+
 		if event.Rune() == 'h' {
 			// In dashboard, 'h' is 'explain this'
 			row, _ := d.Root.GetSelection()
@@ -468,6 +530,46 @@ func (d *Dashboard) Refresh() {
 				headers = view.Headers
 				rows = view.Rows
 			}
+		case "daemonsets", "ds":
+			view, err := resources.GetDaemonSetsView(ctx, d.K8s, d.CurrentNamespace, d.Filter)
+			if err != nil {
+				fetchErr = err
+			} else {
+				headers = view.Headers
+				rows = view.Rows
+			}
+		case "jobs":
+			view, err := resources.GetJobsView(ctx, d.K8s, d.CurrentNamespace, d.Filter)
+			if err != nil {
+				fetchErr = err
+			} else {
+				headers = view.Headers
+				rows = view.Rows
+			}
+		case "cronjobs", "cj":
+			view, err := resources.GetCronJobsView(ctx, d.K8s, d.CurrentNamespace, d.Filter)
+			if err != nil {
+				fetchErr = err
+			} else {
+				headers = view.Headers
+				rows = view.Rows
+			}
+		case "hpa", "horizontalpodautoscalers":
+			view, err := resources.GetHPAView(ctx, d.K8s, d.CurrentNamespace, d.Filter)
+			if err != nil {
+				fetchErr = err
+			} else {
+				headers = view.Headers
+				rows = view.Rows
+			}
+		case "networkpolicies", "netpol":
+			view, err := resources.GetNetworkPoliciesView(ctx, d.K8s, d.CurrentNamespace, d.Filter)
+			if err != nil {
+				fetchErr = err
+			} else {
+				headers = view.Headers
+				rows = view.Rows
+			}
 		default:
 			headers = []string{"#", "NAME", "AGE"}
 			rows = [][]resources.TableCell{
@@ -581,4 +683,113 @@ func (d *Dashboard) GetNamespaceMapping() string {
 		res += fmt.Sprintf("[%d] %s  ", i, name)
 	}
 	return res
+}
+
+// toggleRowSelection toggles the selection state of a row and updates visual marker
+func (d *Dashboard) toggleRowSelection(row int) {
+	if d.SelectedRows[row] {
+		delete(d.SelectedRows, row)
+		// Remove marker
+		d.updateRowMarker(row, false)
+	} else {
+		d.SelectedRows[row] = true
+		// Add marker
+		d.updateRowMarker(row, true)
+	}
+}
+
+// updateRowMarker updates the visual selection marker for a row
+func (d *Dashboard) updateRowMarker(row int, selected bool) {
+	if row <= 0 || row >= d.Root.GetRowCount() {
+		return
+	}
+	// Get the first cell (usually NAMESPACE or NAME)
+	cell := d.Root.GetCell(row, 0)
+	if cell == nil {
+		return
+	}
+	text := cell.Text
+
+	// Remove existing marker if present
+	if len(text) > 2 && text[:2] == "● " {
+		text = text[2:]
+	}
+
+	// Add marker if selected
+	if selected {
+		text = "● " + text
+		cell.SetTextColor(tcell.ColorAqua)
+	} else {
+		cell.SetTextColor(tcell.ColorWhite)
+	}
+	cell.SetText(text)
+}
+
+// clearAllSelections clears all row selections
+func (d *Dashboard) clearAllSelections() {
+	for row := range d.SelectedRows {
+		d.updateRowMarker(row, false)
+	}
+	d.SelectedRows = make(map[int]bool)
+}
+
+// GetSelectedItems returns a list of selected resource names with their namespaces
+func (d *Dashboard) GetSelectedItems() []struct{ Namespace, Name string } {
+	var items []struct{ Namespace, Name string }
+	for row := range d.SelectedRows {
+		if row > 0 && row < d.Root.GetRowCount() {
+			ns := d.CurrentNamespace
+			name := d.Root.GetCell(row, 1).Text
+			// If namespace column exists (column 0), use it
+			if nsCell := d.Root.GetCell(row, 0); nsCell != nil {
+				nsText := nsCell.Text
+				// Remove marker if present
+				if len(nsText) > 2 && nsText[:2] == "● " {
+					nsText = nsText[2:]
+				}
+				ns = nsText
+			}
+			items = append(items, struct{ Namespace, Name string }{ns, name})
+		}
+	}
+	return items
+}
+
+// HasMultipleSelections returns true if more than one row is selected
+func (d *Dashboard) HasMultipleSelections() bool {
+	return len(d.SelectedRows) > 1
+}
+
+// GetSelectionCount returns the number of selected rows
+func (d *Dashboard) GetSelectionCount() int {
+	return len(d.SelectedRows)
+}
+
+// MatchesFilter checks if text matches the current filter
+// Supports regex patterns when filter starts with /
+func (d *Dashboard) MatchesFilter(text string) bool {
+	if d.Filter == "" {
+		return true
+	}
+
+	// Check for regex mode (filter starts with /)
+	if strings.HasPrefix(d.Filter, "/") {
+		pattern := d.Filter[1:]
+		// Remove trailing / if present
+		if strings.HasSuffix(pattern, "/") {
+			pattern = pattern[:len(pattern)-1]
+		}
+		if pattern == "" {
+			return true
+		}
+		re, err := regexp.Compile("(?i)" + pattern) // Case-insensitive
+		if err != nil {
+			// If invalid regex, fall back to substring match
+			return strings.Contains(strings.ToLower(text), strings.ToLower(d.Filter))
+		}
+		return re.MatchString(text)
+	}
+
+	// Default: case-insensitive substring match
+	return strings.Contains(strings.ToLower(text), strings.ToLower(d.Filter))
 }

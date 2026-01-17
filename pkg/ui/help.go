@@ -30,13 +30,27 @@ func NewHelp(onClose func()) *Help {
 		{
 			i18n.T("cat_nav"),
 			[]shortcut{
+				{"j/k, ↑/↓", i18n.T("desc_move_row")},
+				{"g", i18n.T("desc_goto_top")},
+				{"G", i18n.T("desc_goto_bottom")},
+				{"Ctrl-U", i18n.T("desc_page_up")},
+				{"Ctrl-F", i18n.T("desc_page_down")},
 				{":<res>", i18n.T("desc_switch")},
 				{":view <t> <n> [ns]", "Focus a specific resource (Synergy)"},
 				{":ctx", i18n.T("desc_ctx")},
 				{":audit", i18n.T("desc_audit")},
 				{"/<query>", i18n.T("desc_filter")},
+				{"/regex/", i18n.T("desc_regex_filter")},
+				{"Esc", i18n.T("desc_clear_filter")},
 				{"s", i18n.T("shortcut_settings")},
 				{"?", i18n.T("shortcut_help")},
+			},
+		},
+		{
+			i18n.T("cat_selection"),
+			[]shortcut{
+				{"Space", i18n.T("desc_toggle_select")},
+				{"Ctrl-Space", i18n.T("desc_clear_select")},
 			},
 		},
 		{

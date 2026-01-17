@@ -23,7 +23,13 @@ func NewCommandBar(onCommand func(string), onFilter func(string)) *CommandBar {
 	resources := []string{
 		"pods", "po", "nodes", "no", "deployments", "deploy",
 		"services", "svc", "namespaces", "ns", "configmaps", "cm",
-		"secrets", "ingresses", "ing",
+		"secrets", "ingresses", "ing", "statefulsets", "sts",
+		"daemonsets", "ds", "jobs", "cronjobs", "cj",
+		"hpa", "horizontalpodautoscalers", "networkpolicies", "netpol",
+		"roles", "rolebindings", "rb", "clusterroles", "clusterrolebindings", "crb",
+		"persistentvolumes", "pv", "persistentvolumeclaims", "pvc",
+		"storageclasses", "sc", "serviceaccounts", "sa",
+		"events", "ev", "contexts", "ctx",
 	}
 
 	c.Input.SetAutocompleteFunc(func(currentText string) (entries []string) {

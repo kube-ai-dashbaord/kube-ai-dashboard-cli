@@ -12,6 +12,8 @@ import (
 	"github.com/kube-ai-dashbaord/kube-ai-dashboard-cli/pkg/log"
 	"go.yaml.in/yaml/v2"
 	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -355,6 +357,46 @@ func (c *Client) ListServiceAccounts(ctx context.Context, namespace string) ([]c
 	return sa.Items, nil
 }
 
+func (c *Client) ListDaemonSets(ctx context.Context, namespace string) ([]appsv1.DaemonSet, error) {
+	dss, err := c.Clientset.AppsV1().DaemonSets(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return dss.Items, nil
+}
+
+func (c *Client) ListJobs(ctx context.Context, namespace string) ([]batchv1.Job, error) {
+	jobs, err := c.Clientset.BatchV1().Jobs(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return jobs.Items, nil
+}
+
+func (c *Client) ListCronJobs(ctx context.Context, namespace string) ([]batchv1.CronJob, error) {
+	cjs, err := c.Clientset.BatchV1().CronJobs(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return cjs.Items, nil
+}
+
+func (c *Client) ListHorizontalPodAutoscalers(ctx context.Context, namespace string) ([]autoscalingv2.HorizontalPodAutoscaler, error) {
+	hpas, err := c.Clientset.AutoscalingV2().HorizontalPodAutoscalers(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return hpas.Items, nil
+}
+
+func (c *Client) ListNetworkPolicies(ctx context.Context, namespace string) ([]networkingv1.NetworkPolicy, error) {
+	netpols, err := c.Clientset.NetworkingV1().NetworkPolicies(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return netpols.Items, nil
+}
+
 func (c *Client) ListContexts() ([]string, string, error) {
 	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
 	config, err := loadingRules.Load()
@@ -550,7 +592,33 @@ func (c *Client) GetGVR(resource string) (schema.GroupVersionResource, bool) {
 		"sc":                     {Group: "storage.k8s.io", Version: "v1", Resource: "storageclasses"},
 		"serviceaccounts":        {Group: "", Version: "v1", Resource: "serviceaccounts"},
 		"sa":                     {Group: "", Version: "v1", Resource: "serviceaccounts"},
+		"horizontalpodautoscalers": {Group: "autoscaling", Version: "v2", Resource: "horizontalpodautoscalers"},
+		"hpa":                    {Group: "autoscaling", Version: "v2", Resource: "horizontalpodautoscalers"},
+		"networkpolicies":        {Group: "networking.k8s.io", Version: "v1", Resource: "networkpolicies"},
+		"netpol":                 {Group: "networking.k8s.io", Version: "v1", Resource: "networkpolicies"},
 	}
 	gvr, ok := m[strings.ToLower(resource)]
 	return gvr, ok
+}
+
+// GetRestConfig returns the REST config for the client
+func (c *Client) GetRestConfig() (*rest.Config, error) {
+	if c.Config != nil {
+		return c.Config, nil
+	}
+	// Fallback: load from default config
+	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+	configOverrides := &clientcmd.ConfigOverrides{}
+	kubeConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
+	return kubeConfig.ClientConfig()
+}
+
+// DefaultGetOptions returns default options for Get operations
+func DefaultGetOptions() metav1.GetOptions {
+	return metav1.GetOptions{}
+}
+
+// DefaultListOptions returns default options for List operations
+func DefaultListOptions() metav1.ListOptions {
+	return metav1.ListOptions{}
 }
