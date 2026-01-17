@@ -121,6 +121,7 @@ type App struct {
 	filterText       string     // Current filter text
 	tableHeaders     []string   // Original headers
 	tableRows        [][]string // Original rows (unfiltered)
+	apiResources     []k8s.APIResource // Cached API resources from cluster
 
 	// Atomic guards (k9s pattern for lock-free update deduplication)
 	inUpdate   int32
@@ -183,7 +184,33 @@ func NewAppWithNamespace(initialNamespace string) *App {
 	app.setupUI()
 	app.setupKeybindings()
 
+	// Load API resources in background (for autocomplete)
+	go app.loadAPIResources()
+
 	return app
+}
+
+// loadAPIResources fetches available API resources from the cluster
+func (a *App) loadAPIResources() {
+	if a.k8s == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	resources, err := a.k8s.GetAPIResources(ctx)
+	if err != nil {
+		a.logger.Warn("Failed to load API resources", "error", err)
+		// Use common resources as fallback
+		resources = a.k8s.GetCommonResources()
+	}
+
+	a.mx.Lock()
+	a.apiResources = resources
+	a.mx.Unlock()
+
+	a.logger.Info("Loaded API resources", "count", len(resources))
 }
 
 // setupUI initializes all UI components
@@ -882,10 +909,38 @@ func (a *App) getCompletions(input string) []string {
 		return matches
 	}
 
-	// Match commands
+	// Match built-in commands first
 	for _, cmd := range commands {
 		if strings.HasPrefix(cmd.name, input) || strings.HasPrefix(cmd.alias, input) {
 			matches = append(matches, cmd.name)
+		}
+	}
+
+	// Also match API resources from cluster (including CRDs)
+	a.mx.RLock()
+	apiResources := a.apiResources
+	a.mx.RUnlock()
+
+	seen := make(map[string]bool)
+	for _, m := range matches {
+		seen[m] = true
+	}
+
+	for _, res := range apiResources {
+		if seen[res.Name] {
+			continue
+		}
+		if strings.HasPrefix(res.Name, input) {
+			matches = append(matches, res.Name)
+			seen[res.Name] = true
+		}
+		// Check short names
+		for _, short := range res.ShortNames {
+			if strings.HasPrefix(short, input) && !seen[res.Name] {
+				matches = append(matches, res.Name)
+				seen[res.Name] = true
+				break
+			}
 		}
 	}
 

@@ -21,6 +21,7 @@ import (
 	storagev1 "k8s.io/api/storage/v1"
 	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
@@ -1177,4 +1178,118 @@ func (c *Client) getGVRForResource(resource string) (schema.GroupVersionResource
 		return gvr, nil
 	}
 	return schema.GroupVersionResource{}, fmt.Errorf("unknown resource: %s", resource)
+}
+
+// APIResource represents a Kubernetes API resource with metadata
+type APIResource struct {
+	Name         string // Resource name (e.g., "pods", "deployments")
+	ShortNames   []string // Short names (e.g., "po", "deploy")
+	Kind         string // Kind (e.g., "Pod", "Deployment")
+	Group        string // API group (e.g., "", "apps")
+	Version      string // API version (e.g., "v1")
+	Namespaced   bool   // Whether resource is namespaced
+	Verbs        []string // Supported verbs
+}
+
+// GetAPIResources returns all available API resources from the cluster
+func (c *Client) GetAPIResources(ctx context.Context) ([]APIResource, error) {
+	// Use discovery client to get server resources
+	_, resourceLists, err := c.Clientset.Discovery().ServerGroupsAndResources()
+	if err != nil {
+		// Partial failure is OK - some resources might not be accessible
+		log.Warnf("Partial error getting API resources: %v", err)
+	}
+
+	var resources []APIResource
+	seen := make(map[string]bool) // Deduplicate by name
+
+	for _, resourceList := range resourceLists {
+		// Parse group/version from GroupVersion string (e.g., "apps/v1", "v1")
+		gv := resourceList.GroupVersion
+		group := ""
+		version := gv
+		if idx := strings.Index(gv, "/"); idx > 0 {
+			group = gv[:idx]
+			version = gv[idx+1:]
+		}
+
+		for _, r := range resourceList.APIResources {
+			// Skip subresources (e.g., "pods/log", "deployments/scale")
+			if strings.Contains(r.Name, "/") {
+				continue
+			}
+
+			// Skip if already seen (prefer core/apps versions)
+			key := r.Name
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+
+			resources = append(resources, APIResource{
+				Name:       r.Name,
+				ShortNames: r.ShortNames,
+				Kind:       r.Kind,
+				Group:      group,
+				Version:    version,
+				Namespaced: r.Namespaced,
+				Verbs:      r.Verbs,
+			})
+		}
+	}
+
+	return resources, nil
+}
+
+// GetCommonResources returns commonly used resources for quick access (k9s style)
+func (c *Client) GetCommonResources() []APIResource {
+	return []APIResource{
+		{Name: "pods", ShortNames: []string{"po"}, Kind: "Pod", Group: "", Version: "v1", Namespaced: true},
+		{Name: "deployments", ShortNames: []string{"deploy"}, Kind: "Deployment", Group: "apps", Version: "v1", Namespaced: true},
+		{Name: "services", ShortNames: []string{"svc"}, Kind: "Service", Group: "", Version: "v1", Namespaced: true},
+		{Name: "nodes", ShortNames: []string{"no"}, Kind: "Node", Group: "", Version: "v1", Namespaced: false},
+		{Name: "namespaces", ShortNames: []string{"ns"}, Kind: "Namespace", Group: "", Version: "v1", Namespaced: false},
+		{Name: "events", ShortNames: []string{"ev"}, Kind: "Event", Group: "", Version: "v1", Namespaced: true},
+		{Name: "configmaps", ShortNames: []string{"cm"}, Kind: "ConfigMap", Group: "", Version: "v1", Namespaced: true},
+		{Name: "secrets", ShortNames: []string{}, Kind: "Secret", Group: "", Version: "v1", Namespaced: true},
+		{Name: "ingresses", ShortNames: []string{"ing"}, Kind: "Ingress", Group: "networking.k8s.io", Version: "v1", Namespaced: true},
+		{Name: "persistentvolumeclaims", ShortNames: []string{"pvc"}, Kind: "PersistentVolumeClaim", Group: "", Version: "v1", Namespaced: true},
+		{Name: "statefulsets", ShortNames: []string{"sts"}, Kind: "StatefulSet", Group: "apps", Version: "v1", Namespaced: true},
+		{Name: "daemonsets", ShortNames: []string{"ds"}, Kind: "DaemonSet", Group: "apps", Version: "v1", Namespaced: true},
+		{Name: "replicasets", ShortNames: []string{"rs"}, Kind: "ReplicaSet", Group: "apps", Version: "v1", Namespaced: true},
+		{Name: "jobs", ShortNames: []string{}, Kind: "Job", Group: "batch", Version: "v1", Namespaced: true},
+		{Name: "cronjobs", ShortNames: []string{"cj"}, Kind: "CronJob", Group: "batch", Version: "v1", Namespaced: true},
+		{Name: "serviceaccounts", ShortNames: []string{"sa"}, Kind: "ServiceAccount", Group: "", Version: "v1", Namespaced: true},
+		{Name: "roles", ShortNames: []string{}, Kind: "Role", Group: "rbac.authorization.k8s.io", Version: "v1", Namespaced: true},
+		{Name: "rolebindings", ShortNames: []string{"rb"}, Kind: "RoleBinding", Group: "rbac.authorization.k8s.io", Version: "v1", Namespaced: true},
+		{Name: "clusterroles", ShortNames: []string{}, Kind: "ClusterRole", Group: "rbac.authorization.k8s.io", Version: "v1", Namespaced: false},
+		{Name: "clusterrolebindings", ShortNames: []string{"crb"}, Kind: "ClusterRoleBinding", Group: "rbac.authorization.k8s.io", Version: "v1", Namespaced: false},
+		{Name: "persistentvolumes", ShortNames: []string{"pv"}, Kind: "PersistentVolume", Group: "", Version: "v1", Namespaced: false},
+		{Name: "storageclasses", ShortNames: []string{"sc"}, Kind: "StorageClass", Group: "storage.k8s.io", Version: "v1", Namespaced: false},
+		{Name: "networkpolicies", ShortNames: []string{"netpol"}, Kind: "NetworkPolicy", Group: "networking.k8s.io", Version: "v1", Namespaced: true},
+		{Name: "horizontalpodautoscalers", ShortNames: []string{"hpa"}, Kind: "HorizontalPodAutoscaler", Group: "autoscaling", Version: "v2", Namespaced: true},
+		{Name: "poddisruptionbudgets", ShortNames: []string{"pdb"}, Kind: "PodDisruptionBudget", Group: "policy", Version: "v1", Namespaced: true},
+		{Name: "customresourcedefinitions", ShortNames: []string{"crd", "crds"}, Kind: "CustomResourceDefinition", Group: "apiextensions.k8s.io", Version: "v1", Namespaced: false},
+	}
+}
+
+// ListDynamicResource lists resources using the dynamic client for any resource type
+func (c *Client) ListDynamicResource(ctx context.Context, gvr schema.GroupVersionResource, namespace string) ([]map[string]interface{}, error) {
+	var uList *unstructured.UnstructuredList
+	var err error
+
+	if namespace == "" {
+		uList, err = c.Dynamic.Resource(gvr).List(ctx, metav1.ListOptions{})
+	} else {
+		uList, err = c.Dynamic.Resource(gvr).Namespace(namespace).List(ctx, metav1.ListOptions{})
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	var results []map[string]interface{}
+	for _, item := range uList.Items {
+		results = append(results, item.Object)
+	}
+	return results, nil
 }
