@@ -31,6 +31,10 @@
 - **Deep Synergy**: AI analysis with full context (YAML + Events + Logs)
 - **Pedagogical Education**: **Beginner Mode** provides simple explanations for complex resources
 - **Safety First**: AI-proposed modifications require explicit user approval
+- **Decision Required**: Interactive approval flow for kubectl commands with safety analysis
+  - Commands categorized as Read-only, Write, Dangerous, or Interactive
+  - Warnings displayed for dangerous operations (delete --all, force, etc.)
+  - Press 1-9 to execute specific commands, A for all, Esc to cancel
 
 ### Global & Accessible
 - **Full i18n**: Native support for **English**, **Korean**, **Chinese**, and **Japanese**
@@ -69,17 +73,30 @@ docker-compose up -d
 ./k13s
 ```
 
-**Key Bindings:**
+**Key Bindings (k9s Compatible):**
 | Key | Action |
 |-----|--------|
-| `h/j/k/l` | Navigate (vim-style) |
-| `a` | Toggle AI panel |
-| `L` | AI analyze selected resource |
-| `:pods`, `:svc` | Quick resource switch |
+| `j/k` or `↑/↓` | Navigate up/down |
+| `g/G` | Jump to top/bottom |
+| `Enter` | Drill down to related resources |
+| `Esc` | Go back to previous view |
+| `d` | Describe resource |
+| `y` | View YAML |
+| `e` | Edit resource |
+| `l` | View logs (pods) |
+| `s` | Shell into pod |
+| `Ctrl+D` | Delete resource |
+| `S` | Scale (deployments/sts) |
+| `R` | Restart (deployments/sts) |
+| `:pods`, `:svc`, `:deploy` | Quick resource switch |
 | `/` | Filter resources |
-| `s` | Open settings |
+| `Tab` | Focus AI panel |
 | `?` | Show help |
 | `q` | Quit |
+
+**Resource Drill-Down (Enter key):**
+- Service → Pods | Deployment → Pods | Node → Pods
+- CronJob → Jobs | Job → Pods | Namespace → Switch & Pods
 
 ### Web UI Mode
 

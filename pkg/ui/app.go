@@ -305,6 +305,17 @@ func (a *App) setupAIInput() {
 	})
 }
 
+// PendingDecision represents a command awaiting user approval
+type PendingDecision struct {
+	Command     string
+	Description string
+	IsDangerous bool
+	Warnings    []string
+}
+
+// pendingDecisions stores commands awaiting user approval
+var pendingDecisions []PendingDecision
+
 // askAI sends a question to the AI and displays the response
 func (a *App) askAI(question string) {
 	// Show loading state
@@ -345,7 +356,7 @@ func (a *App) askAI(question string) {
 
 User question: %s
 
-Please provide a concise, helpful answer.`, question)
+Please provide a concise, helpful answer. If you suggest kubectl commands, wrap them in code blocks.`, question)
 
 	// Call AI
 	if a.aiClient == nil || !a.aiClient.IsReady() {
@@ -369,7 +380,209 @@ Please provide a concise, helpful answer.`, question)
 		a.QueueUpdateDraw(func() {
 			a.aiPanel.SetText(fmt.Sprintf("[yellow]Q:[white] %s\n\n[red]Error:[white] %v", question, err))
 		})
+		return
 	}
+
+	// After response complete, analyze for commands that need approval
+	finalResponse := fullResponse.String()
+	a.analyzeAndShowDecisions(question, finalResponse)
+}
+
+// analyzeAndShowDecisions extracts commands from AI response and shows decision UI
+func (a *App) analyzeAndShowDecisions(question, response string) {
+	// Extract kubectl commands from response
+	commands := ai.ExtractKubectlCommands(response)
+	if len(commands) == 0 {
+		return
+	}
+
+	// Analyze commands for safety
+	filter := ai.NewCommandFilter()
+	pendingDecisions = nil
+
+	var hasDecisions bool
+	for _, cmd := range commands {
+		report := filter.AnalyzeCommand(cmd)
+		if report.RequiresConfirmation || report.IsDangerous {
+			hasDecisions = true
+			pendingDecisions = append(pendingDecisions, PendingDecision{
+				Command:     cmd,
+				Description: getCommandDescription(cmd),
+				IsDangerous: report.IsDangerous,
+				Warnings:    report.Warnings,
+			})
+		}
+	}
+
+	if !hasDecisions {
+		return
+	}
+
+	// Update AI panel with decision prompt
+	a.QueueUpdateDraw(func() {
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("[yellow]Q:[white] %s\n\n", question))
+		sb.WriteString(fmt.Sprintf("[green]A:[white] %s\n\n", response))
+		sb.WriteString("[yellow::b]━━━ DECISION REQUIRED ━━━[white::-]\n\n")
+
+		for i, decision := range pendingDecisions {
+			if decision.IsDangerous {
+				sb.WriteString(fmt.Sprintf("[red]⚠ [%d] DANGEROUS:[white] ", i+1))
+			} else {
+				sb.WriteString(fmt.Sprintf("[yellow]? [%d] Confirm:[white] ", i+1))
+			}
+			sb.WriteString(fmt.Sprintf("[cyan]%s[white]\n", decision.Command))
+
+			for _, warning := range decision.Warnings {
+				sb.WriteString(fmt.Sprintf("   [red]• %s[white]\n", warning))
+			}
+			sb.WriteString("\n")
+		}
+
+		sb.WriteString("[gray]Press [yellow]1-9[gray] to execute, [yellow]A[gray] to execute all, [yellow]Esc[gray] to cancel[white]")
+		a.aiPanel.SetText(sb.String())
+	})
+}
+
+// getCommandDescription returns a brief description of the command
+func getCommandDescription(cmd string) string {
+	parts := strings.Fields(cmd)
+	if len(parts) < 2 {
+		return cmd
+	}
+
+	// Skip "kubectl" if present
+	if parts[0] == "kubectl" {
+		parts = parts[1:]
+	}
+
+	if len(parts) == 0 {
+		return cmd
+	}
+
+	switch parts[0] {
+	case "delete":
+		return "Delete resource"
+	case "apply":
+		return "Apply configuration"
+	case "create":
+		return "Create resource"
+	case "scale":
+		return "Scale resource"
+	case "rollout":
+		return "Rollout operation"
+	case "patch":
+		return "Patch resource"
+	case "edit":
+		return "Edit resource"
+	case "drain":
+		return "Drain node"
+	case "cordon":
+		return "Cordon node"
+	case "uncordon":
+		return "Uncordon node"
+	default:
+		return parts[0]
+	}
+}
+
+// executeDecision executes a specific pending decision by index
+func (a *App) executeDecision(idx int) {
+	if idx < 0 || idx >= len(pendingDecisions) {
+		return
+	}
+
+	decision := pendingDecisions[idx]
+	a.flashMsg(fmt.Sprintf("Executing: %s", decision.Command), false)
+
+	// Execute the command
+	cmd := exec.Command("bash", "-c", decision.Command)
+	output, err := cmd.CombinedOutput()
+
+	// Update AI panel with result
+	a.QueueUpdateDraw(func() {
+		var result string
+		if err != nil {
+			result = fmt.Sprintf("[red]Error:[white] %v\n%s", err, string(output))
+		} else {
+			result = fmt.Sprintf("[green]Success:[white]\n%s", string(output))
+		}
+
+		// Show execution result
+		currentText := a.aiPanel.GetText(false)
+		a.aiPanel.SetText(currentText + "\n\n[yellow]━━━ EXECUTION RESULT ━━━[white]\n" +
+			fmt.Sprintf("[cyan]%s[white]\n%s", decision.Command, result))
+	})
+
+	// Remove executed decision
+	pendingDecisions = append(pendingDecisions[:idx], pendingDecisions[idx+1:]...)
+
+	// Refresh if it was a modifying command
+	go a.refresh()
+}
+
+// executeAllDecisions executes all pending decisions
+func (a *App) executeAllDecisions() {
+	if len(pendingDecisions) == 0 {
+		return
+	}
+
+	// Show confirmation for dangerous commands
+	hasDangerous := false
+	for _, d := range pendingDecisions {
+		if d.IsDangerous {
+			hasDangerous = true
+			break
+		}
+	}
+
+	if hasDangerous {
+		modal := tview.NewModal().
+			SetText("[red]WARNING:[white] Some commands are dangerous!\n\nAre you sure you want to execute ALL commands?").
+			AddButtons([]string{"Cancel", "Execute All"}).
+			SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+				a.pages.RemovePage("confirm-all")
+				if buttonLabel == "Execute All" {
+					go a.doExecuteAll()
+				}
+			})
+		modal.SetBackgroundColor(tcell.ColorDarkRed)
+		a.pages.AddPage("confirm-all", modal, true, true)
+	} else {
+		go a.doExecuteAll()
+	}
+}
+
+// doExecuteAll actually executes all pending decisions
+func (a *App) doExecuteAll() {
+	decisions := make([]PendingDecision, len(pendingDecisions))
+	copy(decisions, pendingDecisions)
+	pendingDecisions = nil
+
+	var results strings.Builder
+	results.WriteString("\n\n[yellow]━━━ BATCH EXECUTION RESULTS ━━━[white]\n")
+
+	for _, decision := range decisions {
+		a.flashMsg(fmt.Sprintf("Executing: %s", decision.Command), false)
+
+		cmd := exec.Command("bash", "-c", decision.Command)
+		output, err := cmd.CombinedOutput()
+
+		results.WriteString(fmt.Sprintf("\n[cyan]%s[white]\n", decision.Command))
+		if err != nil {
+			results.WriteString(fmt.Sprintf("[red]Error:[white] %v\n%s\n", err, string(output)))
+		} else {
+			results.WriteString(fmt.Sprintf("[green]Success:[white] %s\n", strings.TrimSpace(string(output))))
+		}
+	}
+
+	a.QueueUpdateDraw(func() {
+		currentText := a.aiPanel.GetText(false)
+		a.aiPanel.SetText(currentText + results.String())
+	})
+
+	a.flashMsg(fmt.Sprintf("Executed %d commands", len(decisions)), false)
+	go a.refresh()
 }
 
 // setupAutocomplete configures the command input with autocomplete
@@ -839,8 +1052,28 @@ func (a *App) setupKeybindings() {
 			a.SetFocus(a.aiInput)
 			return nil
 		case tcell.KeyEsc:
+			// Clear pending decisions when escaping
+			if len(pendingDecisions) > 0 {
+				pendingDecisions = nil
+				a.flashMsg("Cancelled pending commands", false)
+			}
 			a.SetFocus(a.table)
 			return nil
+		case tcell.KeyRune:
+			// Handle decision input (1-9 to execute command, A to execute all)
+			if len(pendingDecisions) > 0 {
+				switch event.Rune() {
+				case '1', '2', '3', '4', '5', '6', '7', '8', '9':
+					idx := int(event.Rune() - '1')
+					if idx < len(pendingDecisions) {
+						go a.executeDecision(idx)
+					}
+					return nil
+				case 'a', 'A':
+					go a.executeAllDecisions()
+					return nil
+				}
+			}
 		}
 		return event
 	})
