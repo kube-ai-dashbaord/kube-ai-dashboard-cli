@@ -13,11 +13,30 @@ import (
 	"github.com/kube-ai-dashbaord/kube-ai-dashboard-cli/pkg/web"
 )
 
+// Version info (set by ldflags)
+var (
+	Version   = "dev"
+	BuildTime = "unknown"
+	GitCommit = "unknown"
+)
+
 func main() {
-	// Command line flags
+	// Command line flags (k9s compatible)
 	webMode := flag.Bool("web", false, "Start web server mode")
 	webPort := flag.Int("port", 8080, "Web server port (used with -web)")
+	namespace := flag.String("n", "", "Initial namespace (use 'all' for all namespaces)")
+	allNamespaces := flag.Bool("A", false, "Start with all namespaces")
+	showVersion := flag.Bool("version", false, "Show version information")
+	flag.StringVar(namespace, "namespace", "", "Initial namespace (use 'all' for all namespaces)")
 	flag.Parse()
+
+	// Show version
+	if *showVersion {
+		fmt.Printf("k13s version %s\n", Version)
+		fmt.Printf("  Build time: %s\n", BuildTime)
+		fmt.Printf("  Git commit: %s\n", GitCommit)
+		return
+	}
 
 	// Initialize enterprise logger
 	if err := log.Init("k13s"); err != nil {
@@ -39,8 +58,12 @@ func main() {
 		return
 	}
 
-	// TUI mode
-	runTUI(cfg)
+	// TUI mode with optional namespace
+	initialNS := *namespace
+	if *allNamespaces {
+		initialNS = "" // empty means all namespaces
+	}
+	runTUI(cfg, initialNS)
 }
 
 func runWebServer(cfg *config.Config, port int) {
@@ -56,7 +79,7 @@ func runWebServer(cfg *config.Config, port int) {
 	}
 }
 
-func runTUI(cfg *config.Config) {
+func runTUI(cfg *config.Config, initialNamespace string) {
 	// Initialize audit database if enabled in config
 	if cfg.EnableAudit {
 		if err := db.Init(""); err != nil {
@@ -73,7 +96,7 @@ func runTUI(cfg *config.Config) {
 		}
 	}()
 
-	app := ui.NewApp()
+	app := ui.NewAppWithNamespace(initialNamespace)
 	if err := app.Run(); err != nil {
 		log.Errorf("Application exited with error: %v", err)
 		os.Exit(1)

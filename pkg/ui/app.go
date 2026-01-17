@@ -132,8 +132,14 @@ type App struct {
 	logger *slog.Logger
 }
 
-// NewApp creates a new TUI application
+// NewApp creates a new TUI application with default (all) namespace
 func NewApp() *App {
+	return NewAppWithNamespace("")
+}
+
+// NewAppWithNamespace creates a new TUI application with initial namespace
+// Pass "" for all namespaces, or a specific namespace name
+func NewAppWithNamespace(initialNamespace string) *App {
 	// Setup structured logging (k9s pattern)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
@@ -157,13 +163,18 @@ func NewApp() *App {
 	// AI client (optional)
 	aiClient, _ := ai.NewClient(&cfg.LLM)
 
+	// Handle "all" as empty string (all namespaces)
+	if initialNamespace == "all" {
+		initialNamespace = ""
+	}
+
 	app := &App{
 		Application:      tview.NewApplication(),
 		config:           cfg,
 		k8s:              k8sClient,
 		aiClient:         aiClient,
 		currentResource:  "pods",
-		currentNamespace: "",
+		currentNamespace: initialNamespace,
 		namespaces:       []string{""},
 		showAIPanel:      true,
 		logger:           logger,
@@ -312,10 +323,24 @@ type PendingDecision struct {
 	Description string
 	IsDangerous bool
 	Warnings    []string
+	// For MCP tool execution
+	ToolName  string
+	ToolArgs  string
+	IsToolCall bool
 }
 
 // pendingDecisions stores commands awaiting user approval
 var pendingDecisions []PendingDecision
+
+// pendingToolApproval channel for synchronous tool approval
+var pendingToolApproval = make(chan bool, 1)
+
+// currentToolCallInfo stores info about the tool being approved
+var currentToolCallInfo struct {
+	Name    string
+	Args    string
+	Command string
+}
 
 // askAI sends a question to the AI and displays the response
 func (a *App) askAI(question string) {
@@ -384,43 +409,92 @@ Please provide a concise, helpful answer. If you suggest kubectl commands, wrap 
 				a.aiPanel.SetText(fmt.Sprintf("[yellow]Q:[white] %s\n\n[cyan]🤖 Agentic Mode[white]\n\n[green]A:[white] %s", question, response))
 			})
 		}, func(toolName string, args string) bool {
-			// Tool approval callback - prompt user for dangerous operations
+			// Tool approval callback - kubectl-ai style Decision Required
 			filter := ai.NewCommandFilter()
 
-			// For kubectl commands, check if dangerous
+			// Parse command from args
+			var cmdArgs struct {
+				Command   string `json:"command"`
+				Namespace string `json:"namespace,omitempty"`
+			}
+			parseJSON(args, &cmdArgs)
+
+			fullCmd := ""
 			if toolName == "kubectl" {
-				// Parse the command from args
-				var cmdArgs struct {
-					Command string `json:"command"`
+				fullCmd = "kubectl " + cmdArgs.Command
+				if cmdArgs.Namespace != "" && !strings.Contains(cmdArgs.Command, "-n ") {
+					fullCmd = "kubectl -n " + cmdArgs.Namespace + " " + cmdArgs.Command
 				}
-				if err := parseJSON(args, &cmdArgs); err == nil {
-					fullCmd := "kubectl " + cmdArgs.Command
-					report := filter.AnalyzeCommand(fullCmd)
-
-					if report.IsDangerous {
-						// Show warning and wait for approval
-						a.QueueUpdateDraw(func() {
-							var sb strings.Builder
-							sb.WriteString(fmt.Sprintf("[yellow]Q:[white] %s\n\n", question))
-							sb.WriteString(fullResponse.String())
-							sb.WriteString("\n\n[red::b]⚠️ DANGEROUS COMMAND[white::-]\n")
-							sb.WriteString(fmt.Sprintf("[cyan]%s[white]\n\n", fullCmd))
-							for _, w := range report.Warnings {
-								sb.WriteString(fmt.Sprintf("[red]• %s[white]\n", w))
-							}
-							sb.WriteString("\n[yellow]Press Enter to approve, Esc to cancel[white]")
-							a.aiPanel.SetText(sb.String())
-						})
-
-						// For now, auto-approve non-dangerous write operations
-						// Dangerous operations require explicit user approval
-						return false // Cancel dangerous operations by default
-					}
-				}
+			} else if toolName == "bash" {
+				fullCmd = cmdArgs.Command
 			}
 
-			// Auto-approve read-only operations
-			return true
+			// Analyze command safety
+			report := filter.AnalyzeCommand(fullCmd)
+
+			// Read-only commands: auto-approve
+			if report.Type == ai.CommandTypeReadOnly {
+				return true
+			}
+
+			// Store current tool info for approval
+			currentToolCallInfo.Name = toolName
+			currentToolCallInfo.Args = args
+			currentToolCallInfo.Command = fullCmd
+
+			// Show Decision Required UI
+			a.QueueUpdateDraw(func() {
+				var sb strings.Builder
+				sb.WriteString(fmt.Sprintf("[yellow]Q:[white] %s\n\n", question))
+				sb.WriteString(fullResponse.String())
+				sb.WriteString("\n\n[yellow::b]━━━ DECISION REQUIRED ━━━[white::-]\n\n")
+
+				if report.IsDangerous {
+					sb.WriteString("[red]⚠ DANGEROUS COMMAND[white]\n")
+				} else if report.Type == ai.CommandTypeWrite {
+					sb.WriteString("[yellow]? WRITE OPERATION[white]\n")
+				} else {
+					sb.WriteString("[gray]? COMMAND APPROVAL[white]\n")
+				}
+
+				sb.WriteString(fmt.Sprintf("\n[cyan]%s[white]\n\n", fullCmd))
+
+				for _, w := range report.Warnings {
+					sb.WriteString(fmt.Sprintf("[red]• %s[white]\n", w))
+				}
+
+				sb.WriteString("\n[gray]Press [green]Y[gray] or [green]Enter[gray] to approve, [red]N[gray] or [red]Esc[gray] to cancel[white]")
+				a.aiPanel.SetText(sb.String())
+
+				// Focus AI panel for key input
+				a.SetFocus(a.aiPanel)
+			})
+
+			// Wait for user decision (blocking)
+			// Clear any pending approvals first
+			select {
+			case <-pendingToolApproval:
+			default:
+			}
+
+			// Wait for approval with timeout
+			select {
+			case approved := <-pendingToolApproval:
+				if approved {
+					a.QueueUpdateDraw(func() {
+						currentText := a.aiPanel.GetText(false)
+						a.aiPanel.SetText(currentText + "\n\n[green]✓ Approved - Executing...[white]")
+					})
+				} else {
+					a.QueueUpdateDraw(func() {
+						currentText := a.aiPanel.GetText(false)
+						a.aiPanel.SetText(currentText + "\n\n[red]✗ Cancelled by user[white]")
+					})
+				}
+				return approved
+			case <-ctx.Done():
+				return false
+			}
 		})
 	} else {
 		// Fallback to regular streaming
@@ -1120,7 +1194,35 @@ func (a *App) setupKeybindings() {
 		case tcell.KeyTab:
 			a.SetFocus(a.aiInput)
 			return nil
+		case tcell.KeyEnter:
+			// Approve pending MCP tool call
+			if currentToolCallInfo.Command != "" {
+				select {
+				case pendingToolApproval <- true:
+					currentToolCallInfo = struct {
+						Name    string
+						Args    string
+						Command string
+					}{}
+				default:
+				}
+				return nil
+			}
 		case tcell.KeyEsc:
+			// Cancel pending MCP tool call
+			if currentToolCallInfo.Command != "" {
+				select {
+				case pendingToolApproval <- false:
+					currentToolCallInfo = struct {
+						Name    string
+						Args    string
+						Command string
+					}{}
+				default:
+				}
+				a.SetFocus(a.table)
+				return nil
+			}
 			// Clear pending decisions when escaping
 			if len(pendingDecisions) > 0 {
 				pendingDecisions = nil
@@ -1129,6 +1231,34 @@ func (a *App) setupKeybindings() {
 			a.SetFocus(a.table)
 			return nil
 		case tcell.KeyRune:
+			// Handle Y/N for MCP tool approval (kubectl-ai style)
+			if currentToolCallInfo.Command != "" {
+				switch event.Rune() {
+				case 'y', 'Y':
+					select {
+					case pendingToolApproval <- true:
+						currentToolCallInfo = struct {
+							Name    string
+							Args    string
+							Command string
+						}{}
+					default:
+					}
+					return nil
+				case 'n', 'N':
+					select {
+					case pendingToolApproval <- false:
+						currentToolCallInfo = struct {
+							Name    string
+							Args    string
+							Command string
+						}{}
+					default:
+					}
+					a.SetFocus(a.table)
+					return nil
+				}
+			}
 			// Handle decision input (1-9 to execute command, A to execute all)
 			if len(pendingDecisions) > 0 {
 				switch event.Rune() {
