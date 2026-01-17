@@ -604,6 +604,245 @@
         .health-dot.ok { background: var(--accent-green); }
         .health-dot.warning { background: var(--accent-yellow); }
         .health-dot.error { background: var(--accent-red); }
+
+        /* Light mode */
+        .light-mode {
+            --bg-primary: #f5f5f5;
+            --bg-secondary: #ffffff;
+            --bg-tertiary: #e0e0e0;
+            --text-primary: #1a1a1a;
+            --text-secondary: #666666;
+            --border-color: #cccccc;
+        }
+
+        /* Global Search */
+        .search-container {
+            position: relative;
+            margin-right: 16px;
+        }
+
+        .global-search {
+            width: 300px;
+            padding: 8px 12px 8px 36px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 13px;
+        }
+
+        .global-search:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+        }
+
+        .search-icon {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        .search-shortcut {
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: var(--bg-tertiary);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+
+        /* Resource Filter */
+        .filter-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .filter-input {
+            flex: 1;
+            max-width: 300px;
+            padding: 6px 12px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 12px;
+        }
+
+        .filter-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 8px;
+            background: var(--accent-blue);
+            color: var(--bg-primary);
+            border-radius: 12px;
+            font-size: 11px;
+            cursor: pointer;
+        }
+
+        .filter-chip .remove {
+            opacity: 0.7;
+            font-size: 14px;
+        }
+
+        .filter-chip .remove:hover {
+            opacity: 1;
+        }
+
+        /* Resource Detail Modal */
+        .detail-modal {
+            max-width: 900px;
+            max-height: 90vh;
+        }
+
+        .detail-tabs {
+            display: flex;
+            gap: 4px;
+            padding: 12px 20px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .detail-tab {
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            color: var(--text-secondary);
+            border: none;
+            background: transparent;
+        }
+
+        .detail-tab:hover {
+            background: var(--bg-tertiary);
+        }
+
+        .detail-tab.active {
+            background: var(--accent-blue);
+            color: var(--bg-primary);
+        }
+
+        .detail-content {
+            padding: 20px;
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+
+        .yaml-viewer {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 16px;
+            font-size: 12px;
+            line-height: 1.5;
+            overflow-x: auto;
+            white-space: pre;
+        }
+
+        .property-grid {
+            display: grid;
+            grid-template-columns: 150px 1fr;
+            gap: 8px;
+        }
+
+        .property-label {
+            color: var(--text-secondary);
+            font-size: 12px;
+        }
+
+        .property-value {
+            font-size: 12px;
+        }
+
+        /* Keyboard shortcuts modal */
+        .shortcuts-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+
+        .shortcut-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px;
+            background: var(--bg-primary);
+            border-radius: 4px;
+        }
+
+        .shortcut-key {
+            background: var(--bg-tertiary);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        /* Table row clickable */
+        tbody tr {
+            cursor: pointer;
+        }
+
+        tbody tr:hover {
+            background: var(--bg-tertiary);
+        }
+
+        /* Theme toggle */
+        .theme-toggle {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        /* Context switcher */
+        .context-switcher {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 12px;
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .context-icon {
+            color: var(--accent-green);
+        }
+
+        /* Action buttons */
+        .action-btn {
+            padding: 4px 8px;
+            background: var(--bg-tertiary);
+            border: none;
+            border-radius: 4px;
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 11px;
+        }
+
+        .action-btn:hover {
+            background: var(--accent-blue);
+            color: var(--bg-primary);
+        }
+
+        .action-btn.danger:hover {
+            background: var(--accent-red);
+        }
     </style>
 </head>
 <body>
@@ -636,12 +875,19 @@
                 </svg>
                 k13s
             </div>
+            <div class="search-container">
+                <span class="search-icon">🔍</span>
+                <input type="text" class="global-search" id="global-search" placeholder="Search resources..." onkeyup="handleGlobalSearch(event)">
+                <span class="search-shortcut">⌘K</span>
+            </div>
             <div class="health-indicator">
                 <span class="health-dot ok" id="health-dot"></span>
                 <span id="health-status">Connected</span>
             </div>
             <div class="user-info">
+                <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">🌙</button>
                 <span class="user-badge" id="user-badge">admin</span>
+                <button class="logout-btn" onclick="showShortcuts()">?</button>
                 <button class="logout-btn" onclick="showSettings()">Settings</button>
                 <button class="logout-btn" onclick="logout()">Logout</button>
             </div>
@@ -704,8 +950,14 @@
                             <select class="namespace-select" id="namespace-select" onchange="onNamespaceChange()">
                                 <option value="">All Namespaces</option>
                             </select>
-                            <button class="refresh-btn" onclick="refreshData()">Refresh</button>
+                            <button class="refresh-btn" onclick="refreshData()">↻ Refresh</button>
                         </div>
+                    </div>
+                    <div class="filter-bar">
+                        <span style="font-size: 12px; color: var(--text-secondary);">Filter:</span>
+                        <input type="text" class="filter-input" id="filter-input" placeholder="Type to filter..." onkeyup="handleFilter(event)">
+                        <div id="filter-chips"></div>
+                        <span style="font-size: 11px; color: var(--text-secondary); margin-left: auto;">Press / to focus</span>
                     </div>
                     <div class="table-container">
                         <table>
@@ -812,6 +1064,95 @@
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="closeSettings()">Cancel</button>
                 <button class="btn btn-primary" onclick="saveSettings()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Resource Detail Modal -->
+    <div class="modal-overlay" id="detail-modal">
+        <div class="modal detail-modal">
+            <div class="modal-header">
+                <h2 id="detail-title">Resource Details</h2>
+                <button class="modal-close" onclick="closeDetail()">&times;</button>
+            </div>
+            <div class="detail-tabs">
+                <button class="detail-tab active" onclick="switchDetailTab('overview')">Overview</button>
+                <button class="detail-tab" onclick="switchDetailTab('yaml')">YAML</button>
+                <button class="detail-tab" onclick="switchDetailTab('events')">Events</button>
+            </div>
+            <div class="detail-content" id="detail-content">
+                <div id="detail-overview"></div>
+                <div id="detail-yaml" style="display:none;"></div>
+                <div id="detail-events" style="display:none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeDetail()">Close</button>
+                <button class="btn btn-primary" onclick="analyzeWithAI()">🤖 Analyze with AI</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Keyboard Shortcuts Modal -->
+    <div class="modal-overlay" id="shortcuts-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>Keyboard Shortcuts</h2>
+                <button class="modal-close" onclick="closeShortcuts()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="shortcuts-grid">
+                    <div class="shortcut-item">
+                        <span>Global Search</span>
+                        <span class="shortcut-key">⌘K / Ctrl+K</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <span>Filter Resources</span>
+                        <span class="shortcut-key">/</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <span>Refresh Data</span>
+                        <span class="shortcut-key">R</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <span>Toggle AI Panel</span>
+                        <span class="shortcut-key">A</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <span>View Pods</span>
+                        <span class="shortcut-key">1</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <span>View Deployments</span>
+                        <span class="shortcut-key">2</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <span>View Services</span>
+                        <span class="shortcut-key">3</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <span>View Nodes</span>
+                        <span class="shortcut-key">4</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <span>Show Settings</span>
+                        <span class="shortcut-key">S</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <span>Show Help</span>
+                        <span class="shortcut-key">?</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <span>Close Modal</span>
+                        <span class="shortcut-key">Esc</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <span>Toggle Theme</span>
+                        <span class="shortcut-key">T</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" onclick="closeShortcuts()">Got it!</button>
             </div>
         </div>
     </div>
@@ -1316,6 +1657,205 @@
                 loadData();
             }
         }, 30000);
+
+        // Theme toggle
+        let isDarkMode = true;
+        function toggleTheme() {
+            isDarkMode = !isDarkMode;
+            document.body.classList.toggle('light-mode', !isDarkMode);
+            document.querySelector('.theme-toggle').textContent = isDarkMode ? '🌙' : '☀️';
+            localStorage.setItem('k13s_theme', isDarkMode ? 'dark' : 'light');
+        }
+
+        // Load saved theme
+        if (localStorage.getItem('k13s_theme') === 'light') {
+            toggleTheme();
+        }
+
+        // Global search
+        function handleGlobalSearch(event) {
+            if (event.key === 'Enter') {
+                const query = event.target.value.trim().toLowerCase();
+                if (query) {
+                    // Filter current table
+                    filterTable(query);
+                }
+            }
+        }
+
+        // Filter functionality
+        let currentFilter = '';
+        let cachedData = [];
+
+        function handleFilter(event) {
+            currentFilter = event.target.value.trim().toLowerCase();
+            filterTable(currentFilter);
+        }
+
+        function filterTable(query) {
+            const rows = document.querySelectorAll('#table-body tr');
+            rows.forEach(row => {
+                const text = row.textContent.toLowerCase();
+                row.style.display = text.includes(query) ? '' : 'none';
+            });
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            // Ignore if in input/textarea
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+                if (e.key === 'Escape') {
+                    e.target.blur();
+                }
+                return;
+            }
+
+            // Check for modifiers
+            const isMeta = e.metaKey || e.ctrlKey;
+
+            switch (e.key.toLowerCase()) {
+                case 'k':
+                    if (isMeta) {
+                        e.preventDefault();
+                        document.getElementById('global-search').focus();
+                    }
+                    break;
+                case '/':
+                    e.preventDefault();
+                    document.getElementById('filter-input').focus();
+                    break;
+                case 'r':
+                    e.preventDefault();
+                    refreshData();
+                    break;
+                case 'a':
+                    e.preventDefault();
+                    toggleAIPanel();
+                    break;
+                case '1':
+                    e.preventDefault();
+                    switchResource('pods');
+                    break;
+                case '2':
+                    e.preventDefault();
+                    switchResource('deployments');
+                    break;
+                case '3':
+                    e.preventDefault();
+                    switchResource('services');
+                    break;
+                case '4':
+                    e.preventDefault();
+                    switchResource('nodes');
+                    break;
+                case 's':
+                    e.preventDefault();
+                    showSettings();
+                    break;
+                case 't':
+                    e.preventDefault();
+                    toggleTheme();
+                    break;
+                case '?':
+                    e.preventDefault();
+                    showShortcuts();
+                    break;
+                case 'escape':
+                    closeAllModals();
+                    break;
+            }
+        });
+
+        function toggleAIPanel() {
+            const panel = document.getElementById('ai-panel');
+            const handle = document.getElementById('resize-handle');
+            if (panel.style.display === 'none') {
+                panel.style.display = 'flex';
+                handle.style.display = 'block';
+            } else {
+                panel.style.display = 'none';
+                handle.style.display = 'none';
+            }
+        }
+
+        function closeAllModals() {
+            document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('active'));
+        }
+
+        // Shortcuts modal
+        function showShortcuts() {
+            document.getElementById('shortcuts-modal').classList.add('active');
+        }
+
+        function closeShortcuts() {
+            document.getElementById('shortcuts-modal').classList.remove('active');
+        }
+
+        // Resource detail modal
+        let selectedResource = null;
+
+        function showResourceDetail(item) {
+            selectedResource = item;
+            document.getElementById('detail-title').textContent = `${currentResource.slice(0, -1)}: ${item.name}`;
+
+            // Overview tab
+            const overviewHtml = Object.entries(item).map(([key, value]) =>
+                `<div class="property-label">${key}</div><div class="property-value">${value || '-'}</div>`
+            ).join('');
+            document.getElementById('detail-overview').innerHTML = `<div class="property-grid">${overviewHtml}</div>`;
+
+            // YAML tab - placeholder
+            document.getElementById('detail-yaml').innerHTML = `<div class="yaml-viewer">Loading YAML...</div>`;
+
+            // Events tab - placeholder
+            document.getElementById('detail-events').innerHTML = '<p>Loading events...</p>';
+
+            document.getElementById('detail-modal').classList.add('active');
+            switchDetailTab('overview');
+        }
+
+        function switchDetailTab(tab) {
+            document.querySelectorAll('.detail-tab').forEach(t => t.classList.remove('active'));
+            document.querySelector(`.detail-tab[onclick*="${tab}"]`).classList.add('active');
+
+            document.getElementById('detail-overview').style.display = tab === 'overview' ? 'block' : 'none';
+            document.getElementById('detail-yaml').style.display = tab === 'yaml' ? 'block' : 'none';
+            document.getElementById('detail-events').style.display = tab === 'events' ? 'block' : 'none';
+        }
+
+        function closeDetail() {
+            document.getElementById('detail-modal').classList.remove('active');
+            selectedResource = null;
+        }
+
+        function analyzeWithAI() {
+            if (selectedResource) {
+                const msg = `Analyze this ${currentResource.slice(0, -1)}: ${selectedResource.name} in namespace ${selectedResource.namespace || 'N/A'}. Current status: ${selectedResource.status || 'unknown'}`;
+                document.getElementById('ai-input').value = msg;
+                closeDetail();
+                document.getElementById('ai-input').focus();
+            }
+        }
+
+        // Add click handlers to table rows
+        function addRowClickHandlers() {
+            document.querySelectorAll('#table-body tr').forEach((row, index) => {
+                row.onclick = () => {
+                    const item = cachedData[index];
+                    if (item) {
+                        showResourceDetail(item);
+                    }
+                };
+            });
+        }
+
+        // Override renderTable to include click handlers and cache data
+        const originalRenderTable = renderTable;
+        renderTable = function(resource, items) {
+            cachedData = items || [];
+            originalRenderTable(resource, items);
+            addRowClickHandlers();
+        };
 
         // Init
         init();
