@@ -410,6 +410,8 @@ Please provide a concise, helpful answer. If you suggest kubectl commands, wrap 
 			})
 		}, func(toolName string, args string) bool {
 			// Tool approval callback - kubectl-ai style Decision Required
+			a.logger.Info("Tool callback invoked", "tool", toolName, "args", args)
+
 			filter := ai.NewCommandFilter()
 
 			// Parse command from args
@@ -417,7 +419,9 @@ Please provide a concise, helpful answer. If you suggest kubectl commands, wrap 
 				Command   string `json:"command"`
 				Namespace string `json:"namespace,omitempty"`
 			}
-			parseJSON(args, &cmdArgs)
+			if err := parseJSON(args, &cmdArgs); err != nil {
+				a.logger.Error("Failed to parse tool args", "error", err, "args", args)
+			}
 
 			fullCmd := ""
 			if toolName == "kubectl" {
@@ -428,6 +432,8 @@ Please provide a concise, helpful answer. If you suggest kubectl commands, wrap 
 			} else if toolName == "bash" {
 				fullCmd = cmdArgs.Command
 			}
+
+			a.logger.Info("Analyzed command", "fullCmd", fullCmd)
 
 			// Analyze command safety
 			report := filter.AnalyzeCommand(fullCmd)
