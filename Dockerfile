@@ -2,7 +2,7 @@
 # For standard build, use: docker build -t k13s .
 # For pre-built binary, use: docker build -f Dockerfile.prebuilt -t k13s .
 
-FROM golang:1.24-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates tzdata
