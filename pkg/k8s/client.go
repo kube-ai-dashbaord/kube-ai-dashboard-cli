@@ -452,6 +452,40 @@ func (c *Client) DeleteResource(ctx context.Context, gvr schema.GroupVersionReso
 	return c.Dynamic.Resource(gvr).Namespace(namespace).Delete(ctx, name, metav1.DeleteOptions{})
 }
 
+// GetPodLogsPrevious gets logs from the previous container instance
+func (c *Client) GetPodLogsPrevious(ctx context.Context, namespace, name, container string, tailLines int64) (string, error) {
+	previous := true
+	opts := &corev1.PodLogOptions{
+		Container: container,
+		Previous:  previous,
+	}
+	if tailLines > 0 {
+		opts.TailLines = &tailLines
+	}
+	req := c.Clientset.CoreV1().Pods(namespace).GetLogs(name, opts)
+	podLogs, err := req.Stream(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer podLogs.Close()
+
+	buf := new(strings.Builder)
+	_, err = io.Copy(buf, podLogs)
+	if err != nil {
+		return "", err
+	}
+	return buf.String(), nil
+}
+
+// DeletePodForce force deletes a pod with grace period 0
+func (c *Client) DeletePodForce(ctx context.Context, namespace, name string) error {
+	gracePeriod := int64(0)
+	deleteOptions := metav1.DeleteOptions{
+		GracePeriodSeconds: &gracePeriod,
+	}
+	return c.Clientset.CoreV1().Pods(namespace).Delete(ctx, name, deleteOptions)
+}
+
 func (c *Client) GetPodMetrics(ctx context.Context, namespace string) (map[string][]int64, error) {
 	if c.Metrics == nil {
 		return nil, fmt.Errorf("metrics client not initialized")

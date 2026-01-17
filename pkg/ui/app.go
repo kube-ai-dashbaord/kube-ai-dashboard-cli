@@ -715,7 +715,7 @@ func (a *App) restoreAutocompleteHandler() {
 	a.setupAutocomplete()
 }
 
-// setupKeybindings configures keyboard shortcuts
+// setupKeybindings configures keyboard shortcuts (k9s compatible)
 func (a *App) setupKeybindings() {
 	a.table.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		switch event.Key() {
@@ -739,44 +739,68 @@ func (a *App) setupKeybindings() {
 			case 'n':
 				a.cycleNamespace()
 				return nil
-			case '1':
-				a.setResource("pods")
-			case '2':
-				a.setResource("deployments")
-			case '3':
-				a.setResource("services")
-			case '4':
-				a.setResource("nodes")
-			case '5':
-				a.setResource("namespaces")
-			case '6':
-				a.setResource("events")
+			case '0':
+				a.selectNamespaceByNumber(0) // All namespaces
+				return nil
+			case '1', '2', '3', '4', '5', '6', '7', '8', '9':
+				a.selectNamespaceByNumber(int(event.Rune() - '0'))
+				return nil
 			case 'l':
 				a.showLogs()
 				return nil
+			case 'p':
+				a.showLogsPrevious()
+				return nil
 			case 'd':
-				a.describeResource() // Show YAML
+				a.showDescribe() // k9s: d = describe
 				return nil
-			case 'D':
-				a.showDescribe() // Show kubectl describe output
+			case 'y':
+				a.showYAML() // k9s: y = yaml
 				return nil
-			case 'x':
-				a.confirmDelete()
+			case 'e':
+				a.editResource() // k9s: e = edit
 				return nil
 			case 's':
-				a.execShell()
+				a.execShell() // k9s: s = shell
 				return nil
-			case 'F':
-				a.portForward()
+			case 'a':
+				a.attachContainer() // k9s: a = attach
 				return nil
 			case 'c':
-				a.showContextSwitcher()
+				a.showContextSwitcher() // context switcher
 				return nil
 			case 'g':
-				a.table.Select(1, 0)
+				a.table.Select(1, 0) // go to top
 				return nil
 			case 'G':
-				a.table.Select(a.table.GetRowCount()-1, 0)
+				a.table.Select(a.table.GetRowCount()-1, 0) // go to bottom
+				return nil
+			case 'u':
+				a.useNamespace() // k9s: u = use namespace
+				return nil
+			case 'o':
+				a.showNode() // k9s: o = show node (for pods)
+				return nil
+			case 'k':
+				a.killPod() // k9s: k or Ctrl+K = kill pod
+				return nil
+			case 'b':
+				a.showBenchmark() // k9s: b = benchmark (services)
+				return nil
+			case 't':
+				a.triggerCronJob() // k9s: t = trigger (cronjobs)
+				return nil
+			case 'z':
+				a.showRelatedResource() // k9s: z = zoom (show related)
+				return nil
+			case 'F':
+				a.portForward() // k9s: Shift+F = port-forward
+				return nil
+			case 'S':
+				a.scaleResource() // k9s: Shift+S = scale
+				return nil
+			case 'R':
+				a.restartResource() // k9s: Shift+R = restart
 				return nil
 			}
 		case tcell.KeyTab:
@@ -785,7 +809,22 @@ func (a *App) setupKeybindings() {
 			}
 			return nil
 		case tcell.KeyEnter:
-			a.describeResource()
+			a.drillDown() // k9s: Enter = drill down to related resource
+			return nil
+		case tcell.KeyEsc:
+			a.goBack() // k9s: Esc = go back
+			return nil
+		case tcell.KeyCtrlD:
+			a.confirmDelete() // k9s: Ctrl+D = delete
+			return nil
+		case tcell.KeyCtrlK:
+			a.killPod() // k9s: Ctrl+K = kill pod
+			return nil
+		case tcell.KeyCtrlU:
+			a.pageUp() // k9s: Ctrl+U = page up
+			return nil
+		case tcell.KeyCtrlF:
+			a.pageDown() // k9s: Ctrl+F = page down (vim style)
 			return nil
 		case tcell.KeyCtrlC:
 			a.Stop()
@@ -873,10 +912,31 @@ func (a *App) updateHeader() {
 	}
 }
 
-// updateStatusBar updates the status bar
+// updateStatusBar updates the status bar (k9s style)
 func (a *App) updateStatusBar() {
-	shortcuts := " [black]1[white]Pods [black]2[white]Deploy [black]3[white]Svc [black]4[white]Nodes [black]5[white]NS [black]6[white]Events | " +
-		"[black]/[white]Filter [black]s[white]Shell [black]x[white]Del [black]l[white]Logs [black]d[white]Desc [black]:[white]Cmd [black]?[white]Help [black]q[white]Quit"
+	a.mx.RLock()
+	resource := a.currentResource
+	a.mx.RUnlock()
+
+	// Base shortcuts
+	shortcuts := " [black]<Enter>[white]Drill [black]<Esc>[white]Back [black]/[white]Filter [black]d[white]Describe [black]y[white]YAML"
+
+	// Resource-specific shortcuts
+	switch resource {
+	case "pods", "po":
+		shortcuts += " [black]l[white]Logs [black]s[white]Shell [black]a[white]Attach [black]o[white]Node [black]k[white]Kill"
+	case "deployments", "deploy", "statefulsets", "sts", "daemonsets", "ds":
+		shortcuts += " [black]S[white]Scale [black]R[white]Restart [black]z[white]ReplicaSets"
+	case "cronjobs", "cj":
+		shortcuts += " [black]t[white]Trigger"
+	case "services", "svc":
+		shortcuts += " [black]F[white]Port-Fwd"
+	case "namespaces", "ns":
+		shortcuts += " [black]u[white]Use"
+	}
+
+	shortcuts += " | [black]e[white]Edit [black]^D[white]Del [black]:[white]Cmd [black]?[white]Help [black]q[white]Quit"
+
 	a.statusBar.SetText(shortcuts)
 }
 
@@ -998,6 +1058,11 @@ func (a *App) refresh() {
 			}
 		})
 	}
+
+	// Update status bar for resource-specific shortcuts
+	a.QueueUpdateDraw(func() {
+		a.updateStatusBar()
+	})
 
 	a.logger.Info("Refresh completed", "resource", resource, "count", len(rows))
 }
@@ -1780,43 +1845,72 @@ func (a *App) showHealth() {
 func (a *App) showHelp() {
 	help := tview.NewTextView().
 		SetDynamicColors(true).
+		SetScrollable(true).
 		SetText(`
- [yellow::b]k13s - Kubernetes AI Dashboard[white::-]
+ [yellow::b]k13s - Kubernetes AI Dashboard (k9s compatible)[white::-]
 
- [cyan]Navigation:[white]
-   [yellow]j/k[white] or [yellow]Up/Down[white]  Move selection
-   [yellow]g[white]                 Go to top
-   [yellow]G[white]                 Go to bottom
-   [yellow]Enter[white] or [yellow]d[white]       Describe resource (YAML)
-   [yellow]l[white]                 View logs (pods only)
-   [yellow]s[white]                 Shell into pod
-   [yellow]Shift+F[white]           Port forward
-   [yellow]x[white]                 Delete resource
-   [yellow]c[white]                 Switch context
-   [yellow]Tab[white]               Switch to AI panel
+ [cyan]General Navigation:[white]
+   [yellow]j/k[white] or [yellow]↑/↓[white]    Move selection
+   [yellow]g[white]               Go to top
+   [yellow]G[white]               Go to bottom
+   [yellow]Ctrl+U[white]          Page up
+   [yellow]Ctrl+F[white]          Page down
+   [yellow]Enter[white]           Drill down (navigate to related)
+   [yellow]Esc[white]             Go back (previous view)
+   [yellow]Tab[white]             Switch to AI panel
 
- [cyan]Resource Selection:[white]
-   [yellow]1[white]  Pods           [yellow]4[white]  Nodes
-   [yellow]2[white]  Deployments    [yellow]5[white]  Namespaces
-   [yellow]3[white]  Services       [yellow]6[white]  Events
+ [cyan]View Actions:[white]
+   [yellow]d[white]               Describe (detailed info)
+   [yellow]y[white]               YAML view
+   [yellow]e[white]               Edit resource
+   [yellow]Ctrl+D[white]          Delete resource
+   [yellow]/[white]               Filter mode
+   [yellow]:[white]               Command mode
 
- [cyan]Commands:[white]
-   [yellow]:[white]       Command mode
-   [yellow]/[white]       Filter mode
-   [yellow]n[white]       Cycle namespace
-   [yellow]r[white]       Refresh
-   [yellow]?[white]       Show this help
-   [yellow]q[white]       Quit
+ [cyan]Pod Actions:[white]
+   [yellow]l[white]               View logs
+   [yellow]p[white]               View previous logs
+   [yellow]s[white]               Shell into pod
+   [yellow]a[white]               Attach to container
+   [yellow]o[white]               Show node
+   [yellow]k / Ctrl+K[white]      Kill (force delete) pod
+   [yellow]Shift+F[white]         Port forward
+
+ [cyan]Workload Actions:[white]
+   [yellow]Shift+S[white]         Scale (deploy/sts/rs)
+   [yellow]Shift+R[white]         Restart (deploy/sts/ds)
+   [yellow]z[white]               Show related (replicasets)
+
+ [cyan]CronJob Actions:[white]
+   [yellow]t[white]               Trigger (create job)
+
+ [cyan]Namespace Actions:[white]
+   [yellow]u[white]               Use namespace
+   [yellow]0-9[white]             Quick select namespace
+
+ [cyan]Other:[white]
+   [yellow]r[white]               Refresh
+   [yellow]n[white]               Cycle namespace
+   [yellow]c[white]               Switch context
+   [yellow]?[white]               Show this help
+   [yellow]q[white]               Quit
+
+ [cyan]Drill Down (Enter key):[white]
+   [yellow]Deployment[white]  → Pods       [yellow]Service[white]  → Pods
+   [yellow]ReplicaSet[white]  → Pods       [yellow]Node[white]     → Pods on node
+   [yellow]StatefulSet[white] → Pods       [yellow]CronJob[white]  → Jobs
+   [yellow]DaemonSet[white]   → Pods       [yellow]Namespace[white] → Use & Pods
+   [yellow]Job[white]         → Pods       [yellow]Pod[white]      → Logs
 
  [cyan]Command Examples:[white]
-   [yellow]:pods[white], [yellow]:deploy[white], [yellow]:svc[white], [yellow]:cm[white], [yellow]:sec[white]
+   [yellow]:pods[white], [yellow]:deploy[white], [yellow]:svc[white], [yellow]:cm[white], [yellow]:sec[white], [yellow]:pv[white], [yellow]:hpa[white]
    [yellow]:ns default[white], [yellow]:ctx[white], [yellow]:health[white]
 
- [gray]Press Esc to close[white]
+ [gray]Press Esc or q to close[white]
 `)
-	help.SetBorder(true).SetTitle(" Help ")
+	help.SetBorder(true).SetTitle(" Help (k9s Compatible) ")
 
-	a.pages.AddPage("help", centered(help, 60, 32), true, true)
+	a.pages.AddPage("help", centered(help, 70, 45), true, true)
 	a.SetFocus(help)
 
 	help.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
@@ -2451,6 +2545,754 @@ func accessModesToStrings(modes []corev1.PersistentVolumeAccessMode) []string {
 		}
 	}
 	return result
+}
+
+// Navigation history for back navigation
+type navHistory struct {
+	resource  string
+	namespace string
+	filter    string
+}
+
+var navigationStack []navHistory
+
+// drillDown navigates to related resources (k9s Enter key behavior)
+func (a *App) drillDown() {
+	row, _ := a.table.GetSelection()
+	if row <= 0 {
+		return
+	}
+
+	a.mx.RLock()
+	resource := a.currentResource
+	ns := a.currentNamespace
+	filter := a.filterText
+	a.mx.RUnlock()
+
+	// Save current state to navigation stack
+	navigationStack = append(navigationStack, navHistory{resource, ns, filter})
+
+	// Get selected item info
+	var selectedNs, selectedName string
+	switch resource {
+	case "nodes", "namespaces", "persistentvolumes", "storageclasses",
+		"clusterroles", "clusterrolebindings", "customresourcedefinitions":
+		selectedName = a.table.GetCell(row, 0).Text
+	default:
+		selectedNs = a.table.GetCell(row, 0).Text
+		selectedName = a.table.GetCell(row, 1).Text
+	}
+
+	// Determine drill-down behavior based on resource type
+	switch resource {
+	case "pods", "po":
+		// Pod -> Show logs (container view)
+		a.showLogs()
+		return
+
+	case "deployments", "deploy":
+		// Deployment -> Pods with label selector
+		a.mx.Lock()
+		a.currentResource = "pods"
+		a.currentNamespace = selectedNs
+		a.filterText = selectedName // Filter pods by deployment name
+		a.mx.Unlock()
+		go func() {
+			a.updateHeader()
+			a.refresh()
+		}()
+
+	case "services", "svc":
+		// Service -> Pods (show related pods)
+		a.mx.Lock()
+		a.currentResource = "pods"
+		a.currentNamespace = selectedNs
+		a.filterText = selectedName
+		a.mx.Unlock()
+		go func() {
+			a.updateHeader()
+			a.refresh()
+		}()
+
+	case "replicasets", "rs":
+		// ReplicaSet -> Pods
+		a.mx.Lock()
+		a.currentResource = "pods"
+		a.currentNamespace = selectedNs
+		a.filterText = selectedName
+		a.mx.Unlock()
+		go func() {
+			a.updateHeader()
+			a.refresh()
+		}()
+
+	case "statefulsets", "sts":
+		// StatefulSet -> Pods
+		a.mx.Lock()
+		a.currentResource = "pods"
+		a.currentNamespace = selectedNs
+		a.filterText = selectedName
+		a.mx.Unlock()
+		go func() {
+			a.updateHeader()
+			a.refresh()
+		}()
+
+	case "daemonsets", "ds":
+		// DaemonSet -> Pods
+		a.mx.Lock()
+		a.currentResource = "pods"
+		a.currentNamespace = selectedNs
+		a.filterText = selectedName
+		a.mx.Unlock()
+		go func() {
+			a.updateHeader()
+			a.refresh()
+		}()
+
+	case "jobs", "job":
+		// Job -> Pods
+		a.mx.Lock()
+		a.currentResource = "pods"
+		a.currentNamespace = selectedNs
+		a.filterText = selectedName
+		a.mx.Unlock()
+		go func() {
+			a.updateHeader()
+			a.refresh()
+		}()
+
+	case "cronjobs", "cj":
+		// CronJob -> Jobs
+		a.mx.Lock()
+		a.currentResource = "jobs"
+		a.currentNamespace = selectedNs
+		a.filterText = selectedName
+		a.mx.Unlock()
+		go func() {
+			a.updateHeader()
+			a.refresh()
+		}()
+
+	case "nodes", "no":
+		// Node -> Pods on that node
+		a.mx.Lock()
+		a.currentResource = "pods"
+		a.currentNamespace = "" // All namespaces
+		a.filterText = selectedName
+		a.mx.Unlock()
+		go func() {
+			a.updateHeader()
+			a.refresh()
+		}()
+
+	case "namespaces", "ns":
+		// Namespace -> Switch to that namespace and show pods
+		a.mx.Lock()
+		a.currentResource = "pods"
+		a.currentNamespace = selectedName
+		a.filterText = ""
+		a.mx.Unlock()
+		go func() {
+			a.updateHeader()
+			a.refresh()
+		}()
+
+	default:
+		// Default: show describe
+		a.showDescribe()
+		return
+	}
+}
+
+// goBack returns to previous view (k9s Esc key behavior)
+func (a *App) goBack() {
+	if len(navigationStack) == 0 {
+		return
+	}
+
+	// Pop from stack
+	prev := navigationStack[len(navigationStack)-1]
+	navigationStack = navigationStack[:len(navigationStack)-1]
+
+	a.mx.Lock()
+	a.currentResource = prev.resource
+	a.currentNamespace = prev.namespace
+	a.filterText = prev.filter
+	a.mx.Unlock()
+
+	go func() {
+		a.updateHeader()
+		a.refresh()
+	}()
+}
+
+// pageUp scrolls up by half page
+func (a *App) pageUp() {
+	row, col := a.table.GetSelection()
+	newRow := row - 10
+	if newRow < 1 {
+		newRow = 1
+	}
+	a.table.Select(newRow, col)
+}
+
+// pageDown scrolls down by half page
+func (a *App) pageDown() {
+	row, col := a.table.GetSelection()
+	maxRow := a.table.GetRowCount() - 1
+	newRow := row + 10
+	if newRow > maxRow {
+		newRow = maxRow
+	}
+	a.table.Select(newRow, col)
+}
+
+// showYAML shows YAML for selected resource (k9s y key)
+func (a *App) showYAML() {
+	row, _ := a.table.GetSelection()
+	if row <= 0 {
+		return
+	}
+
+	a.mx.RLock()
+	resource := a.currentResource
+	a.mx.RUnlock()
+
+	var ns, name string
+	switch resource {
+	case "nodes", "no", "namespaces", "ns", "persistentvolumes", "storageclasses",
+		"clusterroles", "clusterrolebindings", "customresourcedefinitions":
+		name = a.table.GetCell(row, 0).Text
+	default:
+		ns = a.table.GetCell(row, 0).Text
+		name = a.table.GetCell(row, 1).Text
+	}
+
+	yamlView := tview.NewTextView().
+		SetDynamicColors(true).
+		SetScrollable(true)
+	yamlView.SetBorder(true).
+		SetTitle(fmt.Sprintf(" YAML: %s/%s (Press Esc or 'q' to close) ", resource, name))
+
+	a.pages.AddPage("yaml", yamlView, true, true)
+	a.SetFocus(yamlView)
+
+	// Fetch YAML
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		gvr, ok := a.k8s.GetGVR(resource)
+		if !ok {
+			a.QueueUpdateDraw(func() {
+				yamlView.SetText(fmt.Sprintf("[red]Unknown resource type: %s", resource))
+			})
+			return
+		}
+
+		yaml, err := a.k8s.GetResourceYAML(ctx, ns, name, gvr)
+		a.QueueUpdateDraw(func() {
+			if err != nil {
+				yamlView.SetText(fmt.Sprintf("[red]Error: %v", err))
+			} else {
+				yamlView.SetText(yaml)
+			}
+		})
+	}()
+
+	yamlView.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyEsc || (event.Key() == tcell.KeyRune && event.Rune() == 'q') {
+			a.pages.RemovePage("yaml")
+			a.SetFocus(a.table)
+			return nil
+		}
+		return event
+	})
+}
+
+// showLogsPrevious shows logs for previous container (k9s p key)
+func (a *App) showLogsPrevious() {
+	a.mx.RLock()
+	resource := a.currentResource
+	a.mx.RUnlock()
+
+	if resource != "pods" && resource != "po" {
+		a.flashMsg("Logs only available for pods", true)
+		return
+	}
+
+	row, _ := a.table.GetSelection()
+	if row <= 0 {
+		return
+	}
+
+	ns := a.table.GetCell(row, 0).Text
+	name := a.table.GetCell(row, 1).Text
+
+	logView := tview.NewTextView().
+		SetDynamicColors(true).
+		SetScrollable(true)
+	logView.SetBorder(true).
+		SetTitle(fmt.Sprintf(" Previous Logs: %s/%s (Press Esc to close) ", ns, name))
+
+	a.pages.AddPage("logs", logView, true, true)
+	a.SetFocus(logView)
+
+	// Fetch previous logs
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		logs, err := a.k8s.GetPodLogsPrevious(ctx, ns, name, "", 100)
+		a.QueueUpdateDraw(func() {
+			if err != nil {
+				logView.SetText(fmt.Sprintf("[red]Error: %v", err))
+			} else if logs == "" {
+				logView.SetText("[gray]No previous logs available")
+			} else {
+				logView.SetText(logs)
+				logView.ScrollToEnd()
+			}
+		})
+	}()
+
+	logView.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyEsc {
+			a.pages.RemovePage("logs")
+			a.SetFocus(a.table)
+			return nil
+		}
+		return event
+	})
+}
+
+// editResource opens the resource in $EDITOR (k9s e key)
+func (a *App) editResource() {
+	row, _ := a.table.GetSelection()
+	if row <= 0 {
+		return
+	}
+
+	a.mx.RLock()
+	resource := a.currentResource
+	a.mx.RUnlock()
+
+	var ns, name string
+	switch resource {
+	case "nodes", "no", "namespaces", "ns", "persistentvolumes", "storageclasses",
+		"clusterroles", "clusterrolebindings", "customresourcedefinitions":
+		name = a.table.GetCell(row, 0).Text
+	default:
+		ns = a.table.GetCell(row, 0).Text
+		name = a.table.GetCell(row, 1).Text
+	}
+
+	// Suspend TUI and run kubectl edit
+	a.Suspend(func() {
+		var cmd *exec.Cmd
+		if ns != "" {
+			cmd = exec.Command("kubectl", "edit", resource, name, "-n", ns)
+		} else {
+			cmd = exec.Command("kubectl", "edit", resource, name)
+		}
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmd.Run()
+	})
+
+	// Refresh after edit
+	go a.refresh()
+}
+
+// attachContainer attaches to a container (k9s a key)
+func (a *App) attachContainer() {
+	a.mx.RLock()
+	resource := a.currentResource
+	a.mx.RUnlock()
+
+	if resource != "pods" && resource != "po" {
+		a.flashMsg("Attach only available for pods", true)
+		return
+	}
+
+	row, _ := a.table.GetSelection()
+	if row <= 0 {
+		return
+	}
+
+	ns := a.table.GetCell(row, 0).Text
+	name := a.table.GetCell(row, 1).Text
+
+	// Suspend TUI and run kubectl attach
+	a.Suspend(func() {
+		cmd := exec.Command("kubectl", "attach", "-it", "-n", ns, name)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmd.Run()
+	})
+}
+
+// useNamespace switches to the selected namespace (k9s u key)
+func (a *App) useNamespace() {
+	a.mx.RLock()
+	resource := a.currentResource
+	a.mx.RUnlock()
+
+	if resource != "namespaces" && resource != "ns" {
+		a.flashMsg("Use 'u' only on namespaces view", true)
+		return
+	}
+
+	row, _ := a.table.GetSelection()
+	if row <= 0 {
+		return
+	}
+
+	nsName := a.table.GetCell(row, 0).Text
+
+	a.mx.Lock()
+	a.currentNamespace = nsName
+	a.currentResource = "pods"
+	a.mx.Unlock()
+
+	a.flashMsg(fmt.Sprintf("Switched to namespace: %s", nsName), false)
+
+	go func() {
+		a.updateHeader()
+		a.refresh()
+	}()
+}
+
+// showNode shows the node where the selected pod is running (k9s o key)
+func (a *App) showNode() {
+	a.mx.RLock()
+	resource := a.currentResource
+	a.mx.RUnlock()
+
+	if resource != "pods" && resource != "po" {
+		a.flashMsg("Show node only available for pods", true)
+		return
+	}
+
+	row, _ := a.table.GetSelection()
+	if row <= 0 {
+		return
+	}
+
+	ns := a.table.GetCell(row, 0).Text
+	name := a.table.GetCell(row, 1).Text
+
+	// Get pod to find node
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	pods, err := a.k8s.ListPods(ctx, ns)
+	if err != nil {
+		a.flashMsg(fmt.Sprintf("Error: %v", err), true)
+		return
+	}
+
+	var nodeName string
+	for _, pod := range pods {
+		if pod.Name == name {
+			nodeName = pod.Spec.NodeName
+			break
+		}
+	}
+
+	if nodeName == "" {
+		a.flashMsg("Pod not scheduled to a node yet", true)
+		return
+	}
+
+	// Save current state and navigate to nodes with filter
+	a.mx.Lock()
+	navigationStack = append(navigationStack, navHistory{resource, a.currentNamespace, a.filterText})
+	a.currentResource = "nodes"
+	a.currentNamespace = ""
+	a.filterText = nodeName
+	a.mx.Unlock()
+
+	go func() {
+		a.updateHeader()
+		a.refresh()
+	}()
+}
+
+// killPod force deletes a pod (k9s k or Ctrl+K key)
+func (a *App) killPod() {
+	a.mx.RLock()
+	resource := a.currentResource
+	a.mx.RUnlock()
+
+	if resource != "pods" && resource != "po" {
+		a.flashMsg("Kill only available for pods", true)
+		return
+	}
+
+	row, _ := a.table.GetSelection()
+	if row <= 0 {
+		return
+	}
+
+	ns := a.table.GetCell(row, 0).Text
+	name := a.table.GetCell(row, 1).Text
+
+	modal := tview.NewModal().
+		SetText(fmt.Sprintf("[red]Kill pod?[white]\n\n%s/%s\n\nThis will force delete the pod.", ns, name)).
+		AddButtons([]string{"Cancel", "Kill"}).
+		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+			a.pages.RemovePage("kill-confirm")
+			a.SetFocus(a.table)
+
+			if buttonLabel == "Kill" {
+				go func() {
+					ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+					defer cancel()
+
+					a.flashMsg(fmt.Sprintf("Killing pod %s/%s...", ns, name), false)
+
+					err := a.k8s.DeletePodForce(ctx, ns, name)
+					if err != nil {
+						a.flashMsg(fmt.Sprintf("Kill failed: %v", err), true)
+						return
+					}
+
+					a.flashMsg(fmt.Sprintf("Killed pod %s/%s", ns, name), false)
+					a.refresh()
+				}()
+			}
+		})
+
+	modal.SetBackgroundColor(tcell.ColorDarkRed)
+	a.pages.AddPage("kill-confirm", modal, true, true)
+}
+
+// showBenchmark runs benchmark on service (k9s b key) - placeholder
+func (a *App) showBenchmark() {
+	a.flashMsg("Benchmark feature not yet implemented", true)
+}
+
+// triggerCronJob manually triggers a cronjob (k9s t key)
+func (a *App) triggerCronJob() {
+	a.mx.RLock()
+	resource := a.currentResource
+	a.mx.RUnlock()
+
+	if resource != "cronjobs" && resource != "cj" {
+		a.flashMsg("Trigger only available for cronjobs", true)
+		return
+	}
+
+	row, _ := a.table.GetSelection()
+	if row <= 0 {
+		return
+	}
+
+	ns := a.table.GetCell(row, 0).Text
+	name := a.table.GetCell(row, 1).Text
+
+	modal := tview.NewModal().
+		SetText(fmt.Sprintf("Trigger CronJob?\n\n%s/%s\n\nThis will create a new job from this cronjob.", ns, name)).
+		AddButtons([]string{"Cancel", "Trigger"}).
+		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+			a.pages.RemovePage("trigger-confirm")
+			a.SetFocus(a.table)
+
+			if buttonLabel == "Trigger" {
+				go func() {
+					a.flashMsg(fmt.Sprintf("Triggering cronjob %s/%s...", ns, name), false)
+
+					// Use kubectl to create job from cronjob
+					jobName := fmt.Sprintf("%s-manual-%d", name, time.Now().Unix())
+					cmd := exec.Command("kubectl", "create", "job", jobName, "--from=cronjob/"+name, "-n", ns)
+					output, err := cmd.CombinedOutput()
+					if err != nil {
+						a.flashMsg(fmt.Sprintf("Trigger failed: %s", string(output)), true)
+						return
+					}
+
+					a.flashMsg(fmt.Sprintf("Created job %s from cronjob %s", jobName, name), false)
+					a.refresh()
+				}()
+			}
+		})
+
+	a.pages.AddPage("trigger-confirm", modal, true, true)
+}
+
+// showRelatedResource shows related resources (k9s z key)
+func (a *App) showRelatedResource() {
+	a.mx.RLock()
+	resource := a.currentResource
+	a.mx.RUnlock()
+
+	row, _ := a.table.GetSelection()
+	if row <= 0 {
+		return
+	}
+
+	var ns, name string
+	switch resource {
+	case "nodes", "namespaces", "persistentvolumes", "storageclasses",
+		"clusterroles", "clusterrolebindings", "customresourcedefinitions":
+		name = a.table.GetCell(row, 0).Text
+	default:
+		ns = a.table.GetCell(row, 0).Text
+		name = a.table.GetCell(row, 1).Text
+	}
+
+	// Different behavior based on resource type
+	switch resource {
+	case "deployments", "deploy":
+		// Show ReplicaSets
+		a.mx.Lock()
+		navigationStack = append(navigationStack, navHistory{resource, a.currentNamespace, a.filterText})
+		a.currentResource = "replicasets"
+		a.currentNamespace = ns
+		a.filterText = name
+		a.mx.Unlock()
+		go func() {
+			a.updateHeader()
+			a.refresh()
+		}()
+
+	default:
+		a.flashMsg(fmt.Sprintf("No related resources for %s", resource), true)
+	}
+}
+
+// scaleResource scales a deployment/statefulset (k9s Shift+S key)
+func (a *App) scaleResource() {
+	a.mx.RLock()
+	resource := a.currentResource
+	a.mx.RUnlock()
+
+	// Only scalable resources
+	scalable := map[string]bool{
+		"deployments": true, "deploy": true,
+		"statefulsets": true, "sts": true,
+		"replicasets": true, "rs": true,
+	}
+
+	if !scalable[resource] {
+		a.flashMsg("Scale only available for deployments, statefulsets, replicasets", true)
+		return
+	}
+
+	row, _ := a.table.GetSelection()
+	if row <= 0 {
+		return
+	}
+
+	ns := a.table.GetCell(row, 0).Text
+	name := a.table.GetCell(row, 1).Text
+
+	// Create scale dialog
+	form := tview.NewForm()
+	form.SetBorder(true).SetTitle(fmt.Sprintf(" Scale: %s/%s ", ns, name))
+
+	var replicas string
+	form.AddInputField("Replicas:", "1", 10, nil, func(text string) {
+		replicas = text
+	})
+	form.AddButton("Scale", func() {
+		a.pages.RemovePage("scale-dialog")
+		a.SetFocus(a.table)
+
+		go func() {
+			a.flashMsg(fmt.Sprintf("Scaling %s/%s to %s replicas...", ns, name, replicas), false)
+
+			resourceType := resource
+			if resourceType == "deploy" {
+				resourceType = "deployment"
+			} else if resourceType == "sts" {
+				resourceType = "statefulset"
+			} else if resourceType == "rs" {
+				resourceType = "replicaset"
+			}
+
+			cmd := exec.Command("kubectl", "scale", resourceType, name, "-n", ns, "--replicas="+replicas)
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				a.flashMsg(fmt.Sprintf("Scale failed: %s", string(output)), true)
+				return
+			}
+
+			a.flashMsg(fmt.Sprintf("Scaled %s/%s to %s replicas", ns, name, replicas), false)
+			a.refresh()
+		}()
+	})
+	form.AddButton("Cancel", func() {
+		a.pages.RemovePage("scale-dialog")
+		a.SetFocus(a.table)
+	})
+
+	a.pages.AddPage("scale-dialog", centered(form, 50, 10), true, true)
+}
+
+// restartResource restarts a deployment/statefulset (k9s Shift+R key)
+func (a *App) restartResource() {
+	a.mx.RLock()
+	resource := a.currentResource
+	a.mx.RUnlock()
+
+	restartable := map[string]bool{
+		"deployments": true, "deploy": true,
+		"statefulsets": true, "sts": true,
+		"daemonsets": true, "ds": true,
+	}
+
+	if !restartable[resource] {
+		a.flashMsg("Restart only available for deployments, statefulsets, daemonsets", true)
+		return
+	}
+
+	row, _ := a.table.GetSelection()
+	if row <= 0 {
+		return
+	}
+
+	ns := a.table.GetCell(row, 0).Text
+	name := a.table.GetCell(row, 1).Text
+
+	modal := tview.NewModal().
+		SetText(fmt.Sprintf("Restart %s?\n\n%s/%s\n\nThis will trigger a rolling restart.", resource, ns, name)).
+		AddButtons([]string{"Cancel", "Restart"}).
+		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+			a.pages.RemovePage("restart-confirm")
+			a.SetFocus(a.table)
+
+			if buttonLabel == "Restart" {
+				go func() {
+					a.flashMsg(fmt.Sprintf("Restarting %s/%s...", ns, name), false)
+
+					resourceType := resource
+					if resourceType == "deploy" {
+						resourceType = "deployment"
+					} else if resourceType == "sts" {
+						resourceType = "statefulset"
+					} else if resourceType == "ds" {
+						resourceType = "daemonset"
+					}
+
+					cmd := exec.Command("kubectl", "rollout", "restart", resourceType, name, "-n", ns)
+					output, err := cmd.CombinedOutput()
+					if err != nil {
+						a.flashMsg(fmt.Sprintf("Restart failed: %s", string(output)), true)
+						return
+					}
+
+					a.flashMsg(fmt.Sprintf("Restarted %s/%s", ns, name), false)
+					a.refresh()
+				}()
+			}
+		})
+
+	a.pages.AddPage("restart-confirm", modal, true, true)
 }
 
 // showDescribe shows describe output for selected resource (like kubectl describe)
