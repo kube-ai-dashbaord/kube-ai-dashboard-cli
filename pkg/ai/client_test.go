@@ -2,7 +2,6 @@ package ai
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -34,37 +33,22 @@ func TestNewClient(t *testing.T) {
 
 func TestClient_IsReady(t *testing.T) {
 	tests := []struct {
-		name   string
-		client *Client
-		want   bool
+		name string
+		cfg  *config.LLMConfig
+		want bool
 	}{
 		{
-			name:   "nil client",
-			client: nil,
-			want:   false,
-		},
-		{
-			name: "nil config",
-			client: &Client{
-				cfg: nil,
-			},
-			want: false,
-		},
-		{
-			name: "empty endpoint",
-			client: &Client{
-				cfg: &config.LLMConfig{
-					Endpoint: "",
-				},
-			},
+			name: "nil client",
+			cfg:  nil,
 			want: false,
 		},
 		{
 			name: "valid config",
-			client: &Client{
-				cfg: &config.LLMConfig{
-					Endpoint: "http://localhost:8080",
-				},
+			cfg: &config.LLMConfig{
+				Provider: "openai",
+				Model:    "gpt-4",
+				Endpoint: "http://localhost:8080",
+				APIKey:   "test-key",
 			},
 			want: true,
 		},
@@ -72,7 +56,11 @@ func TestClient_IsReady(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := tt.client.IsReady()
+			var client *Client
+			if tt.cfg != nil {
+				client, _ = NewClient(tt.cfg)
+			}
+			got := client.IsReady()
 			if got != tt.want {
 				t.Errorf("IsReady() = %v, want %v", got, tt.want)
 			}
@@ -82,28 +70,22 @@ func TestClient_IsReady(t *testing.T) {
 
 func TestClient_GetModel(t *testing.T) {
 	tests := []struct {
-		name   string
-		client *Client
-		want   string
+		name string
+		cfg  *config.LLMConfig
+		want string
 	}{
 		{
-			name:   "nil client",
-			client: nil,
-			want:   "",
-		},
-		{
-			name: "nil config",
-			client: &Client{
-				cfg: nil,
-			},
+			name: "nil client",
+			cfg:  nil,
 			want: "",
 		},
 		{
 			name: "valid config",
-			client: &Client{
-				cfg: &config.LLMConfig{
-					Model: "gpt-4",
-				},
+			cfg: &config.LLMConfig{
+				Provider: "openai",
+				Model:    "gpt-4",
+				Endpoint: "http://localhost:8080",
+				APIKey:   "test-key",
 			},
 			want: "gpt-4",
 		},
@@ -111,7 +93,11 @@ func TestClient_GetModel(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := tt.client.GetModel()
+			var client *Client
+			if tt.cfg != nil {
+				client, _ = NewClient(tt.cfg)
+			}
+			got := client.GetModel()
 			if got != tt.want {
 				t.Errorf("GetModel() = %v, want %v", got, tt.want)
 			}
@@ -121,28 +107,22 @@ func TestClient_GetModel(t *testing.T) {
 
 func TestClient_GetProvider(t *testing.T) {
 	tests := []struct {
-		name   string
-		client *Client
-		want   string
+		name string
+		cfg  *config.LLMConfig
+		want string
 	}{
 		{
-			name:   "nil client",
-			client: nil,
-			want:   "",
-		},
-		{
-			name: "nil config",
-			client: &Client{
-				cfg: nil,
-			},
+			name: "nil client",
+			cfg:  nil,
 			want: "",
 		},
 		{
 			name: "valid config",
-			client: &Client{
-				cfg: &config.LLMConfig{
-					Provider: "openai",
-				},
+			cfg: &config.LLMConfig{
+				Provider: "openai",
+				Model:    "gpt-4",
+				Endpoint: "http://localhost:8080",
+				APIKey:   "test-key",
 			},
 			want: "openai",
 		},
@@ -150,7 +130,11 @@ func TestClient_GetProvider(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := tt.client.GetProvider()
+			var client *Client
+			if tt.cfg != nil {
+				client, _ = NewClient(tt.cfg)
+			}
+			got := client.GetProvider()
 			if got != tt.want {
 				t.Errorf("GetProvider() = %v, want %v", got, tt.want)
 			}
@@ -174,31 +158,9 @@ func TestClient_AskNonStreaming(t *testing.T) {
 			t.Errorf("expected Bearer test-key authorization")
 		}
 
-		// Return mock response
-		resp := ChatResponse{
-			ID: "test-123",
-			Choices: []struct {
-				Message struct {
-					Content string `json:"content"`
-				} `json:"message"`
-				Delta struct {
-					Content string `json:"content"`
-				} `json:"delta"`
-				FinishReason string `json:"finish_reason"`
-			}{
-				{
-					Message: struct {
-						Content string `json:"content"`
-					}{
-						Content: "Hello from AI",
-					},
-					FinishReason: "stop",
-				},
-			},
-		}
-
+		// Return mock response in OpenAI format
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		w.Write([]byte(`{"id":"test-123","choices":[{"message":{"content":"Hello from AI"},"finish_reason":"stop"}]}`))
 	}))
 	defer server.Close()
 

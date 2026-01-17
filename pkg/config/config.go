@@ -18,10 +18,16 @@ type Config struct {
 }
 
 type LLMConfig struct {
-	Provider string `yaml:"provider"`
-	Model    string `yaml:"model"`
-	Endpoint string `yaml:"endpoint"`
-	APIKey   string `yaml:"api_key"`
+	Provider        string  `yaml:"provider" json:"provider"`
+	Model           string  `yaml:"model" json:"model"`
+	Endpoint        string  `yaml:"endpoint" json:"endpoint"`
+	APIKey          string  `yaml:"api_key" json:"api_key"`
+	Region          string  `yaml:"region" json:"region"`                       // For AWS Bedrock
+	AzureDeployment string  `yaml:"azure_deployment" json:"azure_deployment"`   // For Azure OpenAI
+	SkipTLSVerify   bool    `yaml:"skip_tls_verify" json:"skip_tls_verify"`
+	RetryEnabled    bool    `yaml:"retry_enabled" json:"retry_enabled"`
+	MaxRetries      int     `yaml:"max_retries" json:"max_retries"`
+	MaxBackoff      float64 `yaml:"max_backoff" json:"max_backoff"`             // seconds
 }
 
 func GetConfigPath() string {
@@ -37,8 +43,11 @@ func GetConfigDir() (string, error) {
 func NewDefaultConfig() *Config {
 	return &Config{
 		LLM: LLMConfig{
-			Provider: "openai",
-			Model:    "gpt-4",
+			Provider:     "openai",
+			Model:        "gpt-4",
+			RetryEnabled: true,
+			MaxRetries:   5,
+			MaxBackoff:   10.0,
 		},
 		Language:     "en",
 		BeginnerMode: true,

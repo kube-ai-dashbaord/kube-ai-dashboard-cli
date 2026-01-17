@@ -140,6 +140,10 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/settings", s.authManager.AuthMiddleware(s.handleSettings))
 	mux.HandleFunc("/api/settings/llm", s.authManager.AuthMiddleware(s.handleLLMSettings))
 
+	// WebSocket terminal handler
+	terminalHandler := NewTerminalHandler(s.k8sClient)
+	mux.HandleFunc("/api/terminal/", s.authManager.AuthMiddleware(terminalHandler.HandleTerminal))
+
 	// Static files
 	staticFS, err := fs.Sub(staticFiles, "static")
 	if err != nil {

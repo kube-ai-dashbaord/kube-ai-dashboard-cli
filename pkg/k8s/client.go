@@ -622,3 +622,196 @@ func DefaultGetOptions() metav1.GetOptions {
 func DefaultListOptions() metav1.ListOptions {
 	return metav1.ListOptions{}
 }
+
+// RollbackDeployment rolls back a deployment to a previous revision
+func (c *Client) RollbackDeployment(ctx context.Context, namespace, name string, revision int64) error {
+	// Get deployment
+	deployment, err := c.Clientset.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to get deployment: %w", err)
+	}
+
+	// Get ReplicaSets for this deployment
+	selector, err := metav1.LabelSelectorAsSelector(deployment.Spec.Selector)
+	if err != nil {
+		return fmt.Errorf("failed to parse selector: %w", err)
+	}
+
+	rsList, err := c.Clientset.AppsV1().ReplicaSets(namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: selector.String(),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to list replicasets: %w", err)
+	}
+
+	// Find the ReplicaSet with the target revision
+	var targetRS *appsv1.ReplicaSet
+	for i := range rsList.Items {
+		rs := &rsList.Items[i]
+		if rs.Annotations != nil {
+			if revStr, ok := rs.Annotations["deployment.kubernetes.io/revision"]; ok {
+				var rev int64
+				fmt.Sscanf(revStr, "%d", &rev)
+				if rev == revision {
+					targetRS = rs
+					break
+				}
+			}
+		}
+	}
+
+	if targetRS == nil {
+		return fmt.Errorf("revision %d not found", revision)
+	}
+
+	// Copy the pod template from the target ReplicaSet
+	deployment.Spec.Template = targetRS.Spec.Template
+
+	// Update the deployment
+	_, err = c.Clientset.AppsV1().Deployments(namespace).Update(ctx, deployment, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to update deployment: %w", err)
+	}
+
+	return nil
+}
+
+// PauseDeployment pauses a deployment's rollout
+func (c *Client) PauseDeployment(ctx context.Context, namespace, name string) error {
+	payload := []byte(`{"spec":{"paused":true}}`)
+	_, err := c.Clientset.AppsV1().Deployments(namespace).Patch(ctx, name, types.MergePatchType, payload, metav1.PatchOptions{})
+	return err
+}
+
+// ResumeDeployment resumes a paused deployment
+func (c *Client) ResumeDeployment(ctx context.Context, namespace, name string) error {
+	payload := []byte(`{"spec":{"paused":false}}`)
+	_, err := c.Clientset.AppsV1().Deployments(namespace).Patch(ctx, name, types.MergePatchType, payload, metav1.PatchOptions{})
+	return err
+}
+
+// GetDeploymentReplicaSets returns all ReplicaSets for a deployment with revision info
+func (c *Client) GetDeploymentReplicaSets(ctx context.Context, namespace, name string) ([]map[string]interface{}, error) {
+	deployment, err := c.Clientset.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	selector, err := metav1.LabelSelectorAsSelector(deployment.Spec.Selector)
+	if err != nil {
+		return nil, err
+	}
+
+	rsList, err := c.Clientset.AppsV1().ReplicaSets(namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: selector.String(),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	var result []map[string]interface{}
+	for _, rs := range rsList.Items {
+		revision := "0"
+		if rs.Annotations != nil {
+			if rev, ok := rs.Annotations["deployment.kubernetes.io/revision"]; ok {
+				revision = rev
+			}
+		}
+		result = append(result, map[string]interface{}{
+			"name":      rs.Name,
+			"revision":  revision,
+			"replicas":  rs.Status.Replicas,
+			"ready":     rs.Status.ReadyReplicas,
+			"available": rs.Status.AvailableReplicas,
+			"age":       time.Since(rs.CreationTimestamp.Time).Round(time.Second).String(),
+		})
+	}
+	return result, nil
+}
+
+// TriggerCronJob creates a Job from a CronJob (manual trigger)
+func (c *Client) TriggerCronJob(ctx context.Context, namespace, name string) (*batchv1.Job, error) {
+	cronJob, err := c.Clientset.BatchV1().CronJobs(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cronjob: %w", err)
+	}
+
+	// Create a Job from the CronJob spec
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      fmt.Sprintf("%s-manual-%d", name, time.Now().Unix()),
+			Namespace: namespace,
+			Labels:    cronJob.Spec.JobTemplate.Labels,
+			Annotations: map[string]string{
+				"cronjob.kubernetes.io/instantiate": "manual",
+			},
+		},
+		Spec: cronJob.Spec.JobTemplate.Spec,
+	}
+
+	return c.Clientset.BatchV1().Jobs(namespace).Create(ctx, job, metav1.CreateOptions{})
+}
+
+// DrainNode cordons and drains a node
+func (c *Client) DrainNode(ctx context.Context, nodeName string, gracePeriod int64) error {
+	// First, cordon the node
+	if err := c.CordonNode(ctx, nodeName); err != nil {
+		return fmt.Errorf("failed to cordon node: %w", err)
+	}
+
+	// Get all pods on the node
+	pods, err := c.Clientset.CoreV1().Pods("").List(ctx, metav1.ListOptions{
+		FieldSelector: fmt.Sprintf("spec.nodeName=%s", nodeName),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to list pods on node: %w", err)
+	}
+
+	// Evict each pod (skip DaemonSet pods and mirror pods)
+	for _, pod := range pods.Items {
+		// Skip DaemonSet pods
+		if pod.OwnerReferences != nil {
+			isDaemonSet := false
+			for _, ref := range pod.OwnerReferences {
+				if ref.Kind == "DaemonSet" {
+					isDaemonSet = true
+					break
+				}
+			}
+			if isDaemonSet {
+				continue
+			}
+		}
+
+		// Skip mirror pods
+		if _, ok := pod.Annotations["kubernetes.io/config.mirror"]; ok {
+			continue
+		}
+
+		// Delete pod with grace period
+		deleteOptions := metav1.DeleteOptions{}
+		if gracePeriod > 0 {
+			deleteOptions.GracePeriodSeconds = &gracePeriod
+		}
+		err := c.Clientset.CoreV1().Pods(pod.Namespace).Delete(ctx, pod.Name, deleteOptions)
+		if err != nil {
+			log.Errorf("Failed to delete pod %s/%s: %v", pod.Namespace, pod.Name, err)
+		}
+	}
+
+	return nil
+}
+
+// CordonNode marks a node as unschedulable
+func (c *Client) CordonNode(ctx context.Context, nodeName string) error {
+	payload := []byte(`{"spec":{"unschedulable":true}}`)
+	_, err := c.Clientset.CoreV1().Nodes().Patch(ctx, nodeName, types.MergePatchType, payload, metav1.PatchOptions{})
+	return err
+}
+
+// UncordonNode marks a node as schedulable
+func (c *Client) UncordonNode(ctx context.Context, nodeName string) error {
+	payload := []byte(`{"spec":{"unschedulable":false}}`)
+	_, err := c.Clientset.CoreV1().Nodes().Patch(ctx, nodeName, types.MergePatchType, payload, metav1.PatchOptions{})
+	return err
+}

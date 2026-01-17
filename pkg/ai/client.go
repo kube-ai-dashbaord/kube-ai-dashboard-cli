@@ -1,214 +1,114 @@
 package ai
 
 import (
-	"bufio"
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"strings"
 
+	"github.com/kube-ai-dashbaord/kube-ai-dashboard-cli/pkg/ai/providers"
 	"github.com/kube-ai-dashbaord/kube-ai-dashboard-cli/pkg/config"
 )
 
+// Client wraps an LLM provider with additional functionality
 type Client struct {
-	cfg        *config.LLMConfig
-	httpClient *http.Client
+	cfg      *config.LLMConfig
+	provider providers.Provider
 }
 
-type ChatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type ChatRequest struct {
-	Model    string        `json:"model"`
-	Messages []ChatMessage `json:"messages"`
-	Stream   bool          `json:"stream"`
-}
-
-type ChatResponse struct {
-	ID      string `json:"id"`
-	Choices []struct {
-		Message struct {
-			Content string `json:"content"`
-		} `json:"message"`
-		Delta struct {
-			Content string `json:"content"`
-		} `json:"delta"`
-		FinishReason string `json:"finish_reason"`
-	} `json:"choices"`
-}
-
+// NewClient creates a new AI client using the provider factory
 func NewClient(cfg *config.LLMConfig) (*Client, error) {
+	providerCfg := &providers.ProviderConfig{
+		Provider:        cfg.Provider,
+		Model:           cfg.Model,
+		Endpoint:        cfg.Endpoint,
+		APIKey:          cfg.APIKey,
+		Region:          cfg.Region,
+		AzureDeployment: cfg.AzureDeployment,
+		SkipTLSVerify:   cfg.SkipTLSVerify,
+	}
+
+	factory := providers.GetFactory()
+	provider, err := factory.Create(providerCfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create provider: %w", err)
+	}
+
+	// Wrap with retry logic if configured
+	if cfg.RetryEnabled {
+		retryCfg := &providers.RetryConfig{
+			MaxAttempts: cfg.MaxRetries,
+			MaxBackoff:  cfg.MaxBackoff,
+			JitterRatio: 0.1,
+		}
+		if retryCfg.MaxAttempts == 0 {
+			retryCfg.MaxAttempts = 5
+		}
+		if retryCfg.MaxBackoff == 0 {
+			retryCfg.MaxBackoff = 10.0
+		}
+		provider = providers.CreateWithRetry(provider, retryCfg)
+	}
+
 	return &Client{
-		cfg:        cfg,
-		httpClient: &http.Client{},
+		cfg:      cfg,
+		provider: provider,
 	}, nil
 }
 
+// Ask sends a prompt to the AI provider and streams the response via callback
 func (c *Client) Ask(ctx context.Context, prompt string, callback func(string)) error {
-	// Build endpoint URL
-	endpoint := c.cfg.Endpoint
-	if !strings.HasSuffix(endpoint, "/chat/completions") {
-		endpoint = strings.TrimSuffix(endpoint, "/") + "/chat/completions"
+	if c.provider == nil {
+		return fmt.Errorf("AI provider not initialized")
 	}
-
-	// Create request body
-	reqBody := ChatRequest{
-		Model: c.cfg.Model,
-		Messages: []ChatMessage{
-			{Role: "system", Content: "You are a helpful Kubernetes assistant. Help users manage Kubernetes clusters using natural language. When users ask to create resources, generate the appropriate kubectl commands."},
-			{Role: "user", Content: prompt},
-		},
-		Stream: true,
-	}
-
-	jsonBody, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	// Create HTTP request
-	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewBuffer(jsonBody))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.cfg.APIKey)
-
-	// Send request
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
-	}
-
-	// Read streaming response
-	reader := bufio.NewReader(resp.Body)
-	for {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			return fmt.Errorf("error reading response: %w", err)
-		}
-
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-
-		data := strings.TrimPrefix(line, "data: ")
-		if data == "[DONE]" {
-			break
-		}
-
-		var chatResp ChatResponse
-		if err := json.Unmarshal([]byte(data), &chatResp); err != nil {
-			continue
-		}
-
-		for _, choice := range chatResp.Choices {
-			if choice.Delta.Content != "" {
-				callback(choice.Delta.Content)
-			}
-		}
-	}
-
-	return nil
+	return c.provider.Ask(ctx, prompt, callback)
 }
 
+// AskNonStreaming sends a prompt and returns the full response
 func (c *Client) AskNonStreaming(ctx context.Context, prompt string) (string, error) {
-	// Build endpoint URL
-	endpoint := c.cfg.Endpoint
-	if !strings.HasSuffix(endpoint, "/chat/completions") {
-		endpoint = strings.TrimSuffix(endpoint, "/") + "/chat/completions"
+	if c.provider == nil {
+		return "", fmt.Errorf("AI provider not initialized")
 	}
-
-	// Create request body
-	reqBody := ChatRequest{
-		Model: c.cfg.Model,
-		Messages: []ChatMessage{
-			{Role: "system", Content: "You are a helpful Kubernetes assistant."},
-			{Role: "user", Content: prompt},
-		},
-		Stream: false,
-	}
-
-	jsonBody, err := json.Marshal(reqBody)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	// Create HTTP request
-	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewBuffer(jsonBody))
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.cfg.APIKey)
-
-	// Send request
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
-	}
-
-	var chatResp ChatResponse
-	if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
-		return "", fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	if len(chatResp.Choices) == 0 {
-		return "", fmt.Errorf("no response from API")
-	}
-
-	return chatResp.Choices[0].Message.Content, nil
+	return c.provider.AskNonStreaming(ctx, prompt)
 }
 
+// CheckStatus verifies the AI provider is responding
 func (c *Client) CheckStatus(ctx context.Context) error {
 	_, err := c.AskNonStreaming(ctx, "ping")
 	return err
 }
 
+// ListModels returns available models from the provider
+func (c *Client) ListModels(ctx context.Context) ([]string, error) {
+	if c.provider == nil {
+		return nil, fmt.Errorf("AI provider not initialized")
+	}
+	return c.provider.ListModels(ctx)
+}
+
 // IsReady returns true if the client is configured and ready to use
 func (c *Client) IsReady() bool {
-	return c != nil && c.cfg != nil && c.cfg.Endpoint != ""
+	if c == nil || c.provider == nil {
+		return false
+	}
+	return c.provider.IsReady()
 }
 
 // GetModel returns the current model name
 func (c *Client) GetModel() string {
-	if c == nil || c.cfg == nil {
+	if c == nil || c.provider == nil {
 		return ""
 	}
-	return c.cfg.Model
+	return c.provider.GetModel()
 }
 
-// GetProvider returns the current provider
+// GetProvider returns the current provider name
 func (c *Client) GetProvider() string {
-	if c == nil || c.cfg == nil {
+	if c == nil || c.provider == nil {
 		return ""
 	}
-	return c.cfg.Provider
+	return c.provider.Name()
+}
+
+// GetAvailableProviders returns a list of available provider names
+func GetAvailableProviders() string {
+	return providers.GetFactory().ListProviders()
 }
