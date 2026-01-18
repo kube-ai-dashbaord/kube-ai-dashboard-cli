@@ -1032,7 +1032,18 @@ func (a *App) parseNamespaceNumber(input string) (int, bool) {
 	return 0, false
 }
 
-// selectNamespaceByNumber selects namespace by number (k9s style)
+// switchToAllNamespaces switches to all namespaces (k9s style: 0 key)
+func (a *App) switchToAllNamespaces() {
+	a.mx.Lock()
+	a.currentNamespace = ""
+	a.mx.Unlock()
+
+	a.flashMsg("Switched to: all namespaces", false)
+	a.updateHeader()
+	a.refresh()
+}
+
+// selectNamespaceByNumber selects namespace by number (for command mode)
 func (a *App) selectNamespaceByNumber(num int) {
 	a.mx.Lock()
 
@@ -1050,10 +1061,8 @@ func (a *App) selectNamespaceByNumber(num int) {
 	a.mx.Unlock()
 
 	a.flashMsg(fmt.Sprintf("Switched to namespace: %s", nsName), false)
-	go func() {
-		a.updateHeader()
-		a.refresh()
-	}()
+	a.updateHeader()
+	a.refresh()
 }
 
 // startFilter activates filter mode
@@ -1284,12 +1293,9 @@ func (a *App) setupKeybindings() {
 			case 'n':
 				a.cycleNamespace()
 				return nil
-			// k9s style: number keys switch namespaces (0-9)
+			// k9s style: 0 = all namespaces
 			case '0':
-				a.selectNamespaceByNumber(0) // 0 = all namespaces
-				return nil
-			case '1', '2', '3', '4', '5', '6', '7', '8', '9':
-				a.selectNamespaceByNumber(int(event.Rune() - '0'))
+				go a.switchToAllNamespaces()
 				return nil
 			case 'l':
 				a.showLogs()
@@ -1546,37 +1552,22 @@ func (a *App) updateStatusBar() {
 	resource := a.currentResource
 	a.mx.RUnlock()
 
-	// k9s style: resource shortcuts at the beginning
-	resourceHints := "[yellow]1[white]Pod [yellow]2[white]Deploy [yellow]3[white]Svc [yellow]4[white]Node [yellow]5[white]NS [yellow]6[white]Event [yellow]7[white]CM [yellow]8[white]Secret [yellow]9[white]Ing [yellow]0[white]PVC"
+	// k9s style status bar: show key shortcuts
+	shortcuts := "[yellow]<n>[white]NS [yellow]<0>[white]All [yellow]</>[white]Filter [yellow]<:>[white]Cmd [yellow]<?>[white]Help [yellow]<q>[white]Quit"
 
-	// Highlight current resource
+	// Add resource-specific shortcuts
 	switch resource {
 	case "pods", "po":
-		resourceHints = "[green::b]1[white::b]Pod[-:-:-] [yellow]2[white]Deploy [yellow]3[white]Svc [yellow]4[white]Node [yellow]5[white]NS [yellow]6[white]Event [yellow]7[white]CM [yellow]8[white]Secret [yellow]9[white]Ing [yellow]0[white]PVC"
-	case "deployments", "deploy":
-		resourceHints = "[yellow]1[white]Pod [green::b]2[white::b]Deploy[-:-:-] [yellow]3[white]Svc [yellow]4[white]Node [yellow]5[white]NS [yellow]6[white]Event [yellow]7[white]CM [yellow]8[white]Secret [yellow]9[white]Ing [yellow]0[white]PVC"
-	case "services", "svc":
-		resourceHints = "[yellow]1[white]Pod [yellow]2[white]Deploy [green::b]3[white::b]Svc[-:-:-] [yellow]4[white]Node [yellow]5[white]NS [yellow]6[white]Event [yellow]7[white]CM [yellow]8[white]Secret [yellow]9[white]Ing [yellow]0[white]PVC"
-	case "nodes", "no":
-		resourceHints = "[yellow]1[white]Pod [yellow]2[white]Deploy [yellow]3[white]Svc [green::b]4[white::b]Node[-:-:-] [yellow]5[white]NS [yellow]6[white]Event [yellow]7[white]CM [yellow]8[white]Secret [yellow]9[white]Ing [yellow]0[white]PVC"
+		shortcuts = "[yellow]<l>[white]Logs [yellow]<s>[white]Shell [yellow]<d>[white]Describe " + shortcuts
+	case "deployments", "deploy", "statefulsets", "sts", "daemonsets", "ds":
+		shortcuts = "[yellow]<S>[white]Scale [yellow]<R>[white]Restart [yellow]<d>[white]Describe " + shortcuts
 	case "namespaces", "ns":
-		resourceHints = "[yellow]1[white]Pod [yellow]2[white]Deploy [yellow]3[white]Svc [yellow]4[white]Node [green::b]5[white::b]NS[-:-:-] [yellow]6[white]Event [yellow]7[white]CM [yellow]8[white]Secret [yellow]9[white]Ing [yellow]0[white]PVC"
-	case "events", "ev":
-		resourceHints = "[yellow]1[white]Pod [yellow]2[white]Deploy [yellow]3[white]Svc [yellow]4[white]Node [yellow]5[white]NS [green::b]6[white::b]Event[-:-:-] [yellow]7[white]CM [yellow]8[white]Secret [yellow]9[white]Ing [yellow]0[white]PVC"
-	case "configmaps", "cm":
-		resourceHints = "[yellow]1[white]Pod [yellow]2[white]Deploy [yellow]3[white]Svc [yellow]4[white]Node [yellow]5[white]NS [yellow]6[white]Event [green::b]7[white::b]CM[-:-:-] [yellow]8[white]Secret [yellow]9[white]Ing [yellow]0[white]PVC"
-	case "secrets":
-		resourceHints = "[yellow]1[white]Pod [yellow]2[white]Deploy [yellow]3[white]Svc [yellow]4[white]Node [yellow]5[white]NS [yellow]6[white]Event [yellow]7[white]CM [green::b]8[white::b]Secret[-:-:-] [yellow]9[white]Ing [yellow]0[white]PVC"
-	case "ingresses", "ing":
-		resourceHints = "[yellow]1[white]Pod [yellow]2[white]Deploy [yellow]3[white]Svc [yellow]4[white]Node [yellow]5[white]NS [yellow]6[white]Event [yellow]7[white]CM [yellow]8[white]Secret [green::b]9[white::b]Ing[-:-:-] [yellow]0[white]PVC"
-	case "persistentvolumeclaims", "pvc":
-		resourceHints = "[yellow]1[white]Pod [yellow]2[white]Deploy [yellow]3[white]Svc [yellow]4[white]Node [yellow]5[white]NS [yellow]6[white]Event [yellow]7[white]CM [yellow]8[white]Secret [yellow]9[white]Ing [green::b]0[white::b]PVC[-:-:-]"
+		shortcuts = "[yellow]<u>[white]Use " + shortcuts
+	default:
+		shortcuts = "[yellow]<d>[white]Describe [yellow]<y>[white]YAML " + shortcuts
 	}
 
-	// Context shortcuts
-	shortcuts := " [gray]|[white] [black]n[white]NS [black]/[white]Filter [black]:[white]Cmd [black]?[white]Help [black]q[white]Quit"
-
-	a.statusBar.SetText(resourceHints + shortcuts)
+	a.statusBar.SetText(shortcuts)
 }
 
 // prepareContext cancels previous operations and creates new context (k9s pattern)
@@ -2624,8 +2615,9 @@ func (a *App) showHelp() {
  ┌──────────────────────────────────────────────────────────────────┐
  │ [cyan::b]NAMESPACE SHORTCUTS[white::-] (k9s style)                               │
  ├──────────────────────────────────────────────────────────────────┤
- │  [yellow]0[white] All namespaces    [yellow]1-9[white] Switch to namespace by index         │
- │  [yellow]n[white] Cycle namespace   [yellow]u[white]   Use namespace (on namespace view)    │
+ │  [yellow]0[white] All namespaces    [yellow]n[white]   Cycle through namespaces             │
+ │  [yellow]u[white] Use namespace (on namespace view)                              │
+ │  [yellow]:ns <name>[white]         Switch to specific namespace               │
  └──────────────────────────────────────────────────────────────────┘
 
  ┌──────────────────────────────────────────────────────────────────┐
