@@ -890,12 +890,12 @@ func (a *App) getCompletions(input string) []string {
 		return nil
 	}
 
-	input = strings.ToLower(input)
+	inputLower := strings.ToLower(input)
 	var matches []string
 
 	// Check for namespace command (ns <namespace>)
-	if strings.HasPrefix(input, "ns ") || strings.HasPrefix(input, "namespace ") {
-		prefix := strings.TrimPrefix(input, "ns ")
+	if strings.HasPrefix(inputLower, "ns ") || strings.HasPrefix(inputLower, "namespace ") {
+		prefix := strings.TrimPrefix(inputLower, "ns ")
 		prefix = strings.TrimPrefix(prefix, "namespace ")
 
 		a.mx.RLock()
@@ -913,9 +913,57 @@ func (a *App) getCompletions(input string) []string {
 		return matches
 	}
 
+	// Check for resource command with -n flag (e.g., "pods -n kube")
+	if strings.Contains(inputLower, " -n ") {
+		parts := strings.Split(input, " -n ")
+		if len(parts) == 2 {
+			resourcePart := strings.TrimSpace(parts[0])
+			nsPrefix := strings.TrimSpace(parts[1])
+
+			a.mx.RLock()
+			namespaces := a.namespaces
+			a.mx.RUnlock()
+
+			for _, ns := range namespaces {
+				if ns == "" {
+					continue
+				}
+				if strings.HasPrefix(ns, nsPrefix) {
+					matches = append(matches, resourcePart+" -n "+ns)
+				}
+			}
+			return matches
+		}
+	}
+
+	// Check if input ends with "-n " - suggest namespaces
+	if strings.HasSuffix(inputLower, "-n ") || strings.HasSuffix(inputLower, "-n") {
+		basePart := strings.TrimSuffix(input, " ")
+		if !strings.HasSuffix(basePart, " ") {
+			basePart = strings.TrimSuffix(basePart, "-n") + "-n "
+		}
+
+		a.mx.RLock()
+		namespaces := a.namespaces
+		a.mx.RUnlock()
+
+		for _, ns := range namespaces {
+			if ns == "" {
+				matches = append(matches, basePart+"all")
+			} else {
+				matches = append(matches, basePart+ns)
+			}
+		}
+		// Limit suggestions
+		if len(matches) > 10 {
+			matches = matches[:10]
+		}
+		return matches
+	}
+
 	// Match built-in commands first
 	for _, cmd := range commands {
-		if strings.HasPrefix(cmd.name, input) || strings.HasPrefix(cmd.alias, input) {
+		if strings.HasPrefix(cmd.name, inputLower) || strings.HasPrefix(cmd.alias, inputLower) {
 			matches = append(matches, cmd.name)
 		}
 	}
@@ -934,13 +982,13 @@ func (a *App) getCompletions(input string) []string {
 		if seen[res.Name] {
 			continue
 		}
-		if strings.HasPrefix(res.Name, input) {
+		if strings.HasPrefix(res.Name, inputLower) {
 			matches = append(matches, res.Name)
 			seen[res.Name] = true
 		}
 		// Check short names
 		for _, short := range res.ShortNames {
-			if strings.HasPrefix(short, input) && !seen[res.Name] {
+			if strings.HasPrefix(short, inputLower) && !seen[res.Name] {
 				matches = append(matches, res.Name)
 				seen[res.Name] = true
 				break
@@ -984,16 +1032,24 @@ func (a *App) parseNamespaceNumber(input string) (int, bool) {
 	return 0, false
 }
 
-// selectNamespaceByNumber selects namespace by number
+// selectNamespaceByNumber selects namespace by number (k9s style)
 func (a *App) selectNamespaceByNumber(num int) {
 	a.mx.Lock()
-	defer a.mx.Unlock()
 
 	if num >= len(a.namespaces) {
+		a.mx.Unlock()
+		a.flashMsg(fmt.Sprintf("Namespace %d not available (max: %d)", num, len(a.namespaces)-1), true)
 		return
 	}
 
 	a.currentNamespace = a.namespaces[num]
+	nsName := a.namespaces[num]
+	if nsName == "" {
+		nsName = "all"
+	}
+	a.mx.Unlock()
+
+	a.flashMsg(fmt.Sprintf("Switched to namespace: %s", nsName), false)
 	go func() {
 		a.updateHeader()
 		a.refresh()
@@ -1228,36 +1284,12 @@ func (a *App) setupKeybindings() {
 			case 'n':
 				a.cycleNamespace()
 				return nil
-			// k9s style: number keys switch resource types
-			case '1':
-				a.setResource("pods") // 1 = Pods
-				return nil
-			case '2':
-				a.setResource("deployments") // 2 = Deployments
-				return nil
-			case '3':
-				a.setResource("services") // 3 = Services
-				return nil
-			case '4':
-				a.setResource("nodes") // 4 = Nodes
-				return nil
-			case '5':
-				a.setResource("namespaces") // 5 = Namespaces
-				return nil
-			case '6':
-				a.setResource("events") // 6 = Events
-				return nil
-			case '7':
-				a.setResource("configmaps") // 7 = ConfigMaps
-				return nil
-			case '8':
-				a.setResource("secrets") // 8 = Secrets
-				return nil
-			case '9':
-				a.setResource("ingresses") // 9 = Ingresses
-				return nil
+			// k9s style: number keys switch namespaces (0-9)
 			case '0':
-				a.setResource("persistentvolumeclaims") // 0 = PVCs
+				a.selectNamespaceByNumber(0) // 0 = all namespaces
+				return nil
+			case '1', '2', '3', '4', '5', '6', '7', '8', '9':
+				a.selectNamespaceByNumber(int(event.Rune() - '0'))
 				return nil
 			case 'l':
 				a.showLogs()
@@ -2020,7 +2052,50 @@ func (a *App) handleCommand(cmd string) {
 		return
 	}
 
-	// Use the commands list to handle all resource types dynamically
+	// Parse command with -n/--namespace flag (kubectl style: pods -n kube-system)
+	parts := strings.Fields(cmd)
+	resourceCmd := ""
+	namespace := ""
+
+	for i := 0; i < len(parts); i++ {
+		part := parts[i]
+		if part == "-n" || part == "--namespace" {
+			if i+1 < len(parts) {
+				namespace = parts[i+1]
+				i++ // skip namespace value
+			}
+		} else if part == "-A" || part == "--all-namespaces" {
+			namespace = "" // all namespaces
+		} else if resourceCmd == "" {
+			resourceCmd = part
+		}
+	}
+
+	// If -n flag was used, switch namespace first
+	if namespace != "" || strings.Contains(cmd, "-A") || strings.Contains(cmd, "--all-namespaces") {
+		a.mx.Lock()
+		if namespace == "all" || namespace == "*" || strings.Contains(cmd, "-A") {
+			a.currentNamespace = ""
+		} else if namespace != "" {
+			a.currentNamespace = namespace
+		}
+		a.mx.Unlock()
+	}
+
+	// Use the resource command if found
+	if resourceCmd != "" {
+		// Use the commands list to handle all resource types dynamically
+		for _, c := range commands {
+			if resourceCmd == c.name || resourceCmd == c.alias {
+				if c.category == "resource" {
+					a.setResource(c.name)
+					return
+				}
+			}
+		}
+	}
+
+	// Fallback: Use the commands list for simple commands without flags
 	for _, c := range commands {
 		if cmd == c.name || cmd == c.alias {
 			if c.category == "resource" {
@@ -2547,10 +2622,10 @@ func (a *App) showHelp() {
  └──────────────────────────────────────────────────────────────────┘
 
  ┌──────────────────────────────────────────────────────────────────┐
- │ [cyan::b]RESOURCE SHORTCUTS[white::-]                                            │
+ │ [cyan::b]NAMESPACE SHORTCUTS[white::-] (k9s style)                               │
  ├──────────────────────────────────────────────────────────────────┤
- │  [yellow]1[white] Pods    [yellow]2[white] Deploy   [yellow]3[white] Svc     [yellow]4[white] Node    [yellow]5[white] NS       │
- │  [yellow]6[white] Event   [yellow]7[white] CM       [yellow]8[white] Secret  [yellow]9[white] Ingress [yellow]0[white] PVC      │
+ │  [yellow]0[white] All namespaces    [yellow]1-9[white] Switch to namespace by index         │
+ │  [yellow]n[white] Cycle namespace   [yellow]u[white]   Use namespace (on namespace view)    │
  └──────────────────────────────────────────────────────────────────┘
 
  ┌──────────────────────────────────────────────────────────────────┐
@@ -2581,12 +2656,12 @@ func (a *App) showHelp() {
  │ [cyan::b]COMMAND EXAMPLES[white::-] (press : to enter command mode)             │
  ├──────────────────────────────────────────────────────────────────┤
  │  [yellow]:pods[white] [yellow]:po[white]              List pods                            │
+ │  [yellow]:pods -n kube-system[white]  List pods in specific namespace         │
+ │  [yellow]:pods -A[white]              List pods in all namespaces             │
  │  [yellow]:deploy[white] [yellow]:dp[white]            List deployments                     │
  │  [yellow]:svc[white] [yellow]:services[white]         List services                        │
- │  [yellow]:cm[white] [yellow]:configmaps[white]        List configmaps                      │
- │  [yellow]:ns[white] [yellow]:namespaces[white]        List/switch namespaces               │
+ │  [yellow]:ns kube-system[white]       Switch to namespace                     │
  │  [yellow]:ctx[white] [yellow]:context[white]          Switch context                       │
- │  [yellow]:crd[white]                   List custom resource definitions        │
  └──────────────────────────────────────────────────────────────────┘
 
  ┌──────────────────────────────────────────────────────────────────┐
