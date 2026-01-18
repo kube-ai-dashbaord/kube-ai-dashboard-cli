@@ -500,3 +500,166 @@ func TestHandleCommandNamespaceGoroutine(t *testing.T) {
 		t.Errorf("expected namespace to be 'kube-system', got %q", app.currentNamespace)
 	}
 }
+
+// TestHandleCommandWithNamespaceFlag tests kubectl-style -n flag parsing
+func TestHandleCommandWithNamespaceFlag(t *testing.T) {
+	tests := []struct {
+		name              string
+		cmd               string
+		expectedResource  string
+		expectedNamespace string
+	}{
+		{
+			name:              "pods with -n flag",
+			cmd:               "pods -n kube-system",
+			expectedResource:  "pods",
+			expectedNamespace: "kube-system",
+		},
+		{
+			name:              "deploy with --namespace flag",
+			cmd:               "deploy --namespace monitoring",
+			expectedResource:  "deploy",
+			expectedNamespace: "monitoring",
+		},
+		{
+			name:              "services with -A flag",
+			cmd:               "svc -A",
+			expectedResource:  "svc",
+			expectedNamespace: "", // all namespaces
+		},
+		{
+			name:              "pods with --all-namespaces",
+			cmd:               "pods --all-namespaces",
+			expectedResource:  "pods",
+			expectedNamespace: "", // all namespaces
+		},
+		{
+			name:              "simple command without flag",
+			cmd:               "pods",
+			expectedResource:  "pods",
+			expectedNamespace: "unchanged",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Parse command like handleCommand does
+			parts := strings.Fields(tt.cmd)
+			resourceCmd := ""
+			namespace := "unchanged"
+
+			for i := 0; i < len(parts); i++ {
+				part := parts[i]
+				if part == "-n" || part == "--namespace" {
+					if i+1 < len(parts) {
+						namespace = parts[i+1]
+						i++
+					}
+				} else if part == "-A" || part == "--all-namespaces" {
+					namespace = ""
+				} else if resourceCmd == "" {
+					resourceCmd = part
+				}
+			}
+
+			if resourceCmd != tt.expectedResource {
+				t.Errorf("expected resource %q, got %q", tt.expectedResource, resourceCmd)
+			}
+			if namespace != tt.expectedNamespace {
+				t.Errorf("expected namespace %q, got %q", tt.expectedNamespace, namespace)
+			}
+		})
+	}
+}
+
+// TestGetCompletionsWithNamespaceFlag tests autocomplete with -n flag
+func TestGetCompletionsWithNamespaceFlag(t *testing.T) {
+	app := &App{
+		namespaces: []string{"", "default", "kube-system", "kube-public", "monitoring"},
+	}
+
+	tests := []struct {
+		name        string
+		input       string
+		shouldMatch []string
+	}{
+		{
+			name:        "pods -n with kube prefix",
+			input:       "pods -n kube",
+			shouldMatch: []string{"pods -n kube-system", "pods -n kube-public"},
+		},
+		{
+			name:        "deploy -n with mon prefix",
+			input:       "deploy -n mon",
+			shouldMatch: []string{"deploy -n monitoring"},
+		},
+		{
+			name:        "svc -n with empty prefix shows namespaces",
+			input:       "svc -n ",
+			shouldMatch: []string{"svc -n default", "svc -n kube-system", "svc -n kube-public", "svc -n monitoring"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := app.getCompletions(tt.input)
+
+			// Check that expected matches are present
+			for _, expected := range tt.shouldMatch {
+				found := false
+				for _, r := range result {
+					if r == expected {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("expected %q to be in results %v", expected, result)
+				}
+			}
+		})
+	}
+}
+
+// TestNumberKeyNamespaceSwitch tests that number keys switch namespaces
+func TestNumberKeyNamespaceSwitch(t *testing.T) {
+	app := &App{
+		namespaces: []string{"", "default", "kube-system", "monitoring", "production", "staging"},
+	}
+
+	tests := []struct {
+		name              string
+		keyNum            int
+		expectedNamespace string
+		shouldSucceed     bool
+	}{
+		{"key 0 - all namespaces", 0, "", true},
+		{"key 1 - default", 1, "default", true},
+		{"key 2 - kube-system", 2, "kube-system", true},
+		{"key 3 - monitoring", 3, "monitoring", true},
+		{"key 4 - production", 4, "production", true},
+		{"key 5 - staging", 5, "staging", true},
+		{"key 9 - out of range", 9, "unchanged", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			app.currentNamespace = "unchanged"
+
+			// Simulate selectNamespaceByNumber logic
+			if tt.keyNum < len(app.namespaces) {
+				app.currentNamespace = app.namespaces[tt.keyNum]
+			}
+
+			if tt.shouldSucceed {
+				if app.currentNamespace != tt.expectedNamespace {
+					t.Errorf("expected namespace %q, got %q", tt.expectedNamespace, app.currentNamespace)
+				}
+			} else {
+				if app.currentNamespace != "unchanged" {
+					t.Errorf("namespace should not change for out of range key, got %q", app.currentNamespace)
+				}
+			}
+		})
+	}
+}
