@@ -15,8 +15,8 @@ func TestCalculateHealthScore(t *testing.T) {
 	}{
 		{"all healthy", 3, 3, 10, 10, 100.0},
 		{"half healthy", 1, 2, 5, 10, 50.0},
-		{"no nodes", 0, 0, 5, 10, 100.0},
-		{"no pods", 2, 4, 0, 0, 100.0},
+		{"no nodes", 0, 0, 5, 10, 75.0},  // nodeScore=50 (default), podScore=25
+		{"no pods", 2, 4, 0, 0, 75.0},    // nodeScore=25, podScore=50 (default)
 		{"mixed health", 2, 4, 8, 10, 65.0},
 		{"all unhealthy", 0, 2, 0, 10, 0.0},
 	}
@@ -32,27 +32,28 @@ func TestCalculateHealthScore(t *testing.T) {
 	}
 }
 
-func TestReport_Struct(t *testing.T) {
-	report := &Report{
-		ID:          "test-123",
-		Title:       "Test Report",
-		Type:        "cluster-health",
+func TestComprehensiveReport_Struct(t *testing.T) {
+	report := &ComprehensiveReport{
 		GeneratedBy: "test-user",
-		Data: map[string]interface{}{
-			"key": "value",
+		HealthScore: 95.5,
+		ClusterInfo: ClusterInfo{
+			ServerVersion: "v1.28.0",
+			Platform:      "kubernetes",
+			TotalNodes:    3,
+			TotalPods:     10,
 		},
 	}
 
-	if report.ID != "test-123" {
-		t.Errorf("expected ID 'test-123', got %s", report.ID)
+	if report.GeneratedBy != "test-user" {
+		t.Errorf("expected GeneratedBy 'test-user', got %s", report.GeneratedBy)
 	}
 
-	if report.Type != "cluster-health" {
-		t.Errorf("expected type 'cluster-health', got %s", report.Type)
+	if report.HealthScore != 95.5 {
+		t.Errorf("expected HealthScore 95.5, got %f", report.HealthScore)
 	}
 
-	if report.Data["key"] != "value" {
-		t.Error("expected data to contain key 'key' with value 'value'")
+	if report.ClusterInfo.TotalNodes != 3 {
+		t.Errorf("expected TotalNodes 3, got %d", report.ClusterInfo.TotalNodes)
 	}
 }
 

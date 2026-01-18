@@ -417,8 +417,8 @@ func TestE2E_ReportsGeneration(t *testing.T) {
 	}
 }
 
-// E2E Test: Reports available types
-func TestE2E_ReportsAvailableTypes(t *testing.T) {
+// E2E Test: Reports comprehensive report generation
+func TestE2E_ReportsComprehensive(t *testing.T) {
 	server, authManager := setupTestServer(t)
 
 	session, _ := authManager.Authenticate("admin", "admin123")
@@ -438,14 +438,17 @@ func TestE2E_ReportsAvailableTypes(t *testing.T) {
 		t.Fatalf("failed to parse response: %v", err)
 	}
 
-	types, ok := resp["available_types"].([]interface{})
-	if !ok {
-		t.Fatal("expected available_types in response")
+	// Check for comprehensive report fields
+	if _, ok := resp["generated_at"]; !ok {
+		t.Error("expected generated_at in response")
 	}
 
-	expectedTypes := []string{"cluster-health", "resource-usage", "security-audit", "ai-interactions"}
-	if len(types) != len(expectedTypes) {
-		t.Errorf("expected %d types, got %d", len(expectedTypes), len(types))
+	if _, ok := resp["cluster_info"]; !ok {
+		t.Error("expected cluster_info in response")
+	}
+
+	if _, ok := resp["health_score"]; !ok {
+		t.Error("expected health_score in response")
 	}
 }
 
