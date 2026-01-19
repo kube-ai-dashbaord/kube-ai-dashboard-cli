@@ -203,6 +203,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/k8s/", s.authManager.AuthMiddleware(s.handleK8sResource))
 	mux.HandleFunc("/api/audit", s.authManager.AuthMiddleware(s.handleAuditLogs))
 	mux.HandleFunc("/api/reports", s.authManager.AuthMiddleware(s.reportGenerator.HandleReports))
+	mux.HandleFunc("/api/reports/preview", s.authManager.AuthMiddleware(s.reportGenerator.HandleReportPreview))
 	mux.HandleFunc("/api/settings", s.authManager.AuthMiddleware(s.handleSettings))
 	mux.HandleFunc("/api/settings/llm", s.authManager.AuthMiddleware(s.handleLLMSettings))
 

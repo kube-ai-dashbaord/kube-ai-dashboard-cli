@@ -3870,33 +3870,36 @@
         async function showReports() {
             currentResource = 'reports';
             document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
-            document.getElementById('panel-title').textContent = 'Cluster Report';
+            document.getElementById('panel-title').textContent = 'Cluster Report & FinOps Analysis';
 
             document.getElementById('table-header').innerHTML = '';
             document.getElementById('table-body').innerHTML = `
                 <tr><td colspan="5" style="padding: 40px; text-align: center;">
-                    <div style="max-width: 600px; margin: 0 auto;">
+                    <div style="max-width: 800px; margin: 0 auto;">
                         <h2 style="margin-bottom: 20px; color: var(--accent-blue);">📊 Generate Cluster Report</h2>
                         <p style="margin-bottom: 30px; color: var(--text-secondary);">
-                            Generate a comprehensive report of your cluster including nodes, pods, deployments,
-                            services, container images, security analysis, and AI-powered insights.
+                            Generate a comprehensive report including nodes, pods, deployments, services,
+                            container images, security analysis, <strong style="color: var(--accent-green);">FinOps cost optimization</strong>, and AI-powered insights.
                         </p>
 
                         <div style="display: flex; flex-direction: column; gap: 15px; align-items: center;">
                             <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                                 <input type="checkbox" id="include-ai-analysis" checked>
-                                <span>Include AI Analysis (recommended)</span>
+                                <span>Include AI Analysis with FinOps recommendations</span>
                             </label>
 
-                            <div style="display: flex; gap: 15px; flex-wrap: wrap; justify-content: center;">
-                                <button class="refresh-btn" onclick="generateReport('html')" style="padding: 12px 24px; font-size: 14px;">
-                                    📄 Download HTML/PDF
+                            <div style="display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-top: 10px;">
+                                <button class="refresh-btn" onclick="previewReport()" style="padding: 12px 24px; font-size: 14px; background: var(--accent-green);">
+                                    👁️ Preview Report
                                 </button>
-                                <button class="refresh-btn" onclick="generateReport('csv')" style="padding: 12px 24px; font-size: 14px;">
-                                    📊 Download CSV/Excel
+                                <button class="refresh-btn" onclick="downloadReport('html')" style="padding: 12px 24px; font-size: 14px;">
+                                    📄 Download HTML
+                                </button>
+                                <button class="refresh-btn" onclick="downloadReport('csv')" style="padding: 12px 24px; font-size: 14px;">
+                                    📊 Download CSV
                                 </button>
                                 <button class="refresh-btn" onclick="generateReport('json')" style="padding: 12px 24px; font-size: 14px;">
-                                    📋 View JSON
+                                    📋 View Summary
                                 </button>
                             </div>
                         </div>
@@ -3906,6 +3909,89 @@
                     </div>
                 </td></tr>
             `;
+        }
+
+        // Preview report in new window
+        async function previewReport() {
+            const includeAI = document.getElementById('include-ai-analysis')?.checked ?? true;
+            const statusEl = document.getElementById('report-status');
+
+            statusEl.innerHTML = `<div style="color: var(--accent-blue);">
+                <span class="loading-dots"><span></span><span></span><span></span></span>
+                Generating report preview${includeAI ? ' with AI analysis' : ''}... This may take a moment.
+            </div>`;
+
+            try {
+                const url = `/api/reports/preview?ai=${includeAI}`;
+                const resp = await fetchWithAuth(url);
+
+                if (!resp.ok) throw new Error('Failed to generate report');
+
+                const html = await resp.text();
+
+                // Open in new window
+                const previewWindow = window.open('', '_blank', 'width=1200,height=800');
+                previewWindow.document.write(html);
+                previewWindow.document.close();
+
+                statusEl.innerHTML = `<div style="color: var(--accent-green);">
+                    ✓ Report preview opened in new window
+                </div>`;
+            } catch (e) {
+                statusEl.innerHTML = `<div style="color: var(--accent-red);">
+                    ✕ Failed to generate preview: ${e.message}
+                </div>`;
+            }
+        }
+
+        // Download report
+        async function downloadReport(format) {
+            const includeAI = document.getElementById('include-ai-analysis')?.checked ?? true;
+            const statusEl = document.getElementById('report-status');
+
+            statusEl.innerHTML = `<div style="color: var(--accent-blue);">
+                <span class="loading-dots"><span></span><span></span><span></span></span>
+                Generating ${format.toUpperCase()} report${includeAI ? ' with AI analysis' : ''}...
+            </div>`;
+
+            try {
+                const url = `/api/reports?format=${format}&ai=${includeAI}&download=true`;
+                const resp = await fetch(url, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                if (!resp.ok) throw new Error('Failed to generate report');
+
+                const blob = await resp.blob();
+                const filename = resp.headers.get('Content-Disposition')?.match(/filename=(.+)/)?.[1]
+                    || `k13s-report-${new Date().toISOString().slice(0,10)}.${format}`;
+
+                // Trigger download
+                const downloadUrl = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(downloadUrl);
+
+                statusEl.innerHTML = `<div style="color: var(--accent-green);">
+                    ✓ Report downloaded: ${filename}
+                </div>`;
+
+                if (format === 'html') {
+                    document.getElementById('report-preview').innerHTML = `
+                        <p style="color: var(--text-secondary); margin-top: 10px;">
+                            💡 <strong>Tip:</strong> Open the HTML file in your browser and use Print → Save as PDF to create a PDF version.
+                        </p>
+                    `;
+                }
+            } catch (e) {
+                statusEl.innerHTML = `<div style="color: var(--accent-red);">
+                    ✕ Failed to download report: ${e.message}
+                </div>`;
+            }
         }
 
         async function generateReport(format) {
@@ -3931,84 +4017,101 @@
                         ✓ Report generated successfully at ${new Date(report.generated_at).toLocaleString()}
                     </div>`;
 
-                    // Show summary
+                    // Calculate total potential savings
+                    const totalSavings = (report.finops_analysis?.cost_optimizations || [])
+                        .reduce((sum, opt) => sum + (opt.estimated_saving || 0), 0);
+
+                    // Show summary with FinOps
                     previewEl.innerHTML = `
                         <div style="background: var(--bg-tertiary); padding: 20px; border-radius: 8px; margin-top: 20px;">
                             <h3 style="margin-bottom: 15px;">📈 Report Summary</h3>
-                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px;">
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px;">
                                 <div style="background: var(--bg-secondary); padding: 15px; border-radius: 6px; text-align: center;">
-                                    <div style="font-size: 24px; font-weight: bold; color: var(--accent-blue);">${report.node_summary?.total || 0}</div>
-                                    <div style="font-size: 12px; color: var(--text-secondary);">Nodes (${report.node_summary?.ready || 0} Ready)</div>
+                                    <div style="font-size: 22px; font-weight: bold; color: var(--accent-blue);">${report.node_summary?.total || 0}</div>
+                                    <div style="font-size: 11px; color: var(--text-secondary);">Nodes (${report.node_summary?.ready || 0} Ready)</div>
                                 </div>
                                 <div style="background: var(--bg-secondary); padding: 15px; border-radius: 6px; text-align: center;">
-                                    <div style="font-size: 24px; font-weight: bold; color: var(--accent-green);">${report.workloads?.total_pods || 0}</div>
-                                    <div style="font-size: 12px; color: var(--text-secondary);">Pods (${report.workloads?.running_pods || 0} Running)</div>
+                                    <div style="font-size: 22px; font-weight: bold; color: var(--accent-green);">${report.workloads?.total_pods || 0}</div>
+                                    <div style="font-size: 11px; color: var(--text-secondary);">Pods (${report.workloads?.running_pods || 0} Running)</div>
                                 </div>
                                 <div style="background: var(--bg-secondary); padding: 15px; border-radius: 6px; text-align: center;">
-                                    <div style="font-size: 24px; font-weight: bold; color: var(--accent-purple);">${report.workloads?.total_deployments || 0}</div>
-                                    <div style="font-size: 12px; color: var(--text-secondary);">Deployments</div>
+                                    <div style="font-size: 22px; font-weight: bold; color: var(--accent-purple);">${report.workloads?.total_deployments || 0}</div>
+                                    <div style="font-size: 11px; color: var(--text-secondary);">Deployments</div>
                                 </div>
                                 <div style="background: var(--bg-secondary); padding: 15px; border-radius: 6px; text-align: center;">
-                                    <div style="font-size: 24px; font-weight: bold; color: var(--accent-cyan);">${report.workloads?.total_services || 0}</div>
-                                    <div style="font-size: 12px; color: var(--text-secondary);">Services</div>
-                                </div>
-                                <div style="background: var(--bg-secondary); padding: 15px; border-radius: 6px; text-align: center;">
-                                    <div style="font-size: 24px; font-weight: bold; color: ${report.health_score >= 90 ? 'var(--accent-green)' : report.health_score >= 70 ? 'var(--accent-yellow)' : 'var(--accent-red)'};">${Math.round(report.health_score || 0)}%</div>
-                                    <div style="font-size: 12px; color: var(--text-secondary);">Health Score</div>
+                                    <div style="font-size: 22px; font-weight: bold; color: ${report.health_score >= 90 ? 'var(--accent-green)' : report.health_score >= 70 ? 'var(--accent-yellow)' : 'var(--accent-red)'};">${Math.round(report.health_score || 0)}%</div>
+                                    <div style="font-size: 11px; color: var(--text-secondary);">Health Score</div>
                                 </div>
                             </div>
+
+                            <!-- FinOps Section -->
+                            <div style="margin-top: 25px; background: linear-gradient(135deg, #1a472a 0%, #2d5a3d 100%); padding: 20px; border-radius: 8px; border: 1px solid #4caf50;">
+                                <h3 style="margin-bottom: 15px; color: #9ece6a;">💰 FinOps Cost Analysis</h3>
+                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 15px;">
+                                    <div style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 6px; text-align: center;">
+                                        <div style="font-size: 24px; font-weight: bold; color: #9ece6a;">$${(report.finops_analysis?.total_estimated_monthly_cost || 0).toFixed(2)}</div>
+                                        <div style="font-size: 11px; color: var(--text-secondary);">Est. Monthly Cost</div>
+                                    </div>
+                                    <div style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 6px; text-align: center;">
+                                        <div style="font-size: 24px; font-weight: bold; color: #7dcfff;">${(report.finops_analysis?.resource_efficiency?.cpu_requests_vs_capacity || 0).toFixed(1)}%</div>
+                                        <div style="font-size: 11px; color: var(--text-secondary);">CPU Utilization</div>
+                                    </div>
+                                    <div style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 6px; text-align: center;">
+                                        <div style="font-size: 24px; font-weight: bold; color: #bb9af7;">${(report.finops_analysis?.resource_efficiency?.memory_requests_vs_capacity || 0).toFixed(1)}%</div>
+                                        <div style="font-size: 11px; color: var(--text-secondary);">Memory Utilization</div>
+                                    </div>
+                                    <div style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 6px; text-align: center;">
+                                        <div style="font-size: 24px; font-weight: bold; color: #f7768e;">$${totalSavings.toFixed(2)}</div>
+                                        <div style="font-size: 11px; color: var(--text-secondary);">Potential Savings/mo</div>
+                                    </div>
+                                </div>
+
+                                ${(report.finops_analysis?.cost_optimizations || []).length > 0 ? `
+                                    <h4 style="margin: 15px 0 10px 0; color: #e0af68;">⚡ Cost Optimization Recommendations</h4>
+                                    <div style="max-height: 200px; overflow-y: auto;">
+                                        ${(report.finops_analysis?.cost_optimizations || []).slice(0, 5).map(opt => `
+                                            <div style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 4px; margin-bottom: 8px; border-left: 3px solid ${opt.priority === 'high' ? '#f7768e' : opt.priority === 'medium' ? '#e0af68' : '#9ece6a'};">
+                                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                                    <span style="font-weight: bold; color: ${opt.priority === 'high' ? '#f7768e' : opt.priority === 'medium' ? '#e0af68' : '#9ece6a'};">[${opt.priority.toUpperCase()}] ${escapeHtml(opt.category)}</span>
+                                                    <span style="color: #9ece6a; font-weight: bold;">Save $${(opt.estimated_saving || 0).toFixed(2)}/mo</span>
+                                                </div>
+                                                <div style="font-size: 12px; margin-top: 5px; color: var(--text-secondary);">${escapeHtml(opt.description)}</div>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                ` : '<p style="color: var(--text-secondary);">No optimization recommendations at this time.</p>'}
+                            </div>
+
                             ${report.ai_analysis ? `
                                 <div style="margin-top: 20px;">
-                                    <h4 style="margin-bottom: 10px;">🤖 AI Analysis</h4>
+                                    <h4 style="margin-bottom: 10px;">🤖 AI Analysis with FinOps Insights</h4>
                                     <div style="background: var(--bg-primary); padding: 15px; border-radius: 6px; white-space: pre-wrap; font-size: 13px; max-height: 300px; overflow-y: auto; border-left: 3px solid var(--accent-blue);">
                                         ${escapeHtml(report.ai_analysis)}
                                     </div>
                                 </div>
                             ` : ''}
+
+                            <div style="margin-top: 20px;">
+                                <h4 style="margin-bottom: 10px;">📊 Cost by Namespace (Top 5)</h4>
+                                <table style="width: 100%; font-size: 12px;">
+                                    <tr style="background: var(--bg-secondary);"><th style="padding: 8px;">Namespace</th><th style="padding: 8px;">Pods</th><th style="padding: 8px;">CPU</th><th style="padding: 8px;">Memory</th><th style="padding: 8px;">Est. Cost</th></tr>
+                                    ${(report.finops_analysis?.cost_by_namespace || []).slice(0, 5).map(ns => `
+                                        <tr><td style="padding: 8px;">${escapeHtml(ns.namespace)}</td><td style="padding: 8px;">${ns.pod_count}</td><td style="padding: 8px;">${escapeHtml(ns.cpu_requests)}</td><td style="padding: 8px;">${escapeHtml(ns.memory_requests)}</td><td style="padding: 8px;">$${(ns.estimated_cost || 0).toFixed(2)}</td></tr>
+                                    `).join('')}
+                                </table>
+                            </div>
+
                             <div style="margin-top: 20px;">
                                 <h4 style="margin-bottom: 10px;">🐳 Top Container Images</h4>
                                 <table style="width: 100%; font-size: 12px;">
                                     <tr style="background: var(--bg-secondary);"><th style="padding: 8px;">Image</th><th style="padding: 8px;">Tag</th><th style="padding: 8px;">Pods</th></tr>
-                                    ${(report.images || []).slice(0, 10).map(img => `
+                                    ${(report.images || []).slice(0, 8).map(img => `
                                         <tr><td style="padding: 8px;">${escapeHtml(img.repository)}</td><td style="padding: 8px;">${escapeHtml(img.tag)}</td><td style="padding: 8px;">${img.pod_count}</td></tr>
                                     `).join('')}
                                 </table>
                             </div>
                         </div>
                     `;
-                } else {
-                    // Download file
-                    const resp = await fetch(url, {
-                        headers: { 'Authorization': `Bearer ${authToken}` }
-                    });
-
-                    if (!resp.ok) throw new Error('Failed to generate report');
-
-                    const blob = await resp.blob();
-                    const filename = resp.headers.get('Content-Disposition')?.match(/filename=(.+)/)?.[1]
-                        || `k13s-report.${format}`;
-
-                    // Trigger download
-                    const downloadUrl = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = downloadUrl;
-                    a.download = filename;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(downloadUrl);
-
-                    statusEl.innerHTML = `<div style="color: var(--accent-green);">
-                        ✓ Report downloaded: ${filename}
-                    </div>`;
-
-                    if (format === 'html') {
-                        previewEl.innerHTML = `
-                            <p style="color: var(--text-secondary); margin-top: 10px;">
-                                💡 <strong>Tip:</strong> Open the HTML file in your browser and use Print → Save as PDF to create a PDF version.
-                            </p>
-                        `;
-                    }
                 }
             } catch (e) {
                 statusEl.innerHTML = `<div style="color: var(--accent-red);">

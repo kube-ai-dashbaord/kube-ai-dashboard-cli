@@ -17,22 +17,84 @@ import (
 
 // ComprehensiveReport contains all cluster information for export
 type ComprehensiveReport struct {
-	GeneratedAt   time.Time              `json:"generated_at"`
-	GeneratedBy   string                 `json:"generated_by"`
-	ClusterInfo   ClusterInfo            `json:"cluster_info"`
-	NodeSummary   NodeSummary            `json:"node_summary"`
-	Nodes         []NodeInfo             `json:"nodes"`
+	GeneratedAt      time.Time           `json:"generated_at"`
+	GeneratedBy      string              `json:"generated_by"`
+	ClusterInfo      ClusterInfo         `json:"cluster_info"`
+	NodeSummary      NodeSummary         `json:"node_summary"`
+	Nodes            []NodeInfo          `json:"nodes"`
 	NamespaceSummary NamespaceSummary    `json:"namespace_summary"`
-	Namespaces    []NamespaceInfo        `json:"namespaces"`
-	Workloads     WorkloadSummary        `json:"workloads"`
-	Pods          []PodInfo              `json:"pods"`
-	Deployments   []DeploymentInfo       `json:"deployments"`
-	Services      []ServiceInfo          `json:"services"`
-	SecurityInfo  SecurityInfo           `json:"security_info"`
-	Images        []ImageInfo            `json:"images"`
-	Events        []EventInfo            `json:"events"`
-	AIAnalysis    string                 `json:"ai_analysis,omitempty"`
-	HealthScore   float64                `json:"health_score"`
+	Namespaces       []NamespaceInfo     `json:"namespaces"`
+	Workloads        WorkloadSummary     `json:"workloads"`
+	Pods             []PodInfo           `json:"pods"`
+	Deployments      []DeploymentInfo    `json:"deployments"`
+	Services         []ServiceInfo       `json:"services"`
+	SecurityInfo     SecurityInfo        `json:"security_info"`
+	FinOpsAnalysis   FinOpsAnalysis      `json:"finops_analysis"`
+	Images           []ImageInfo         `json:"images"`
+	Events           []EventInfo         `json:"events"`
+	AIAnalysis       string              `json:"ai_analysis,omitempty"`
+	HealthScore      float64             `json:"health_score"`
+}
+
+// FinOpsAnalysis contains cost optimization insights
+type FinOpsAnalysis struct {
+	TotalEstimatedMonthlyCost float64                `json:"total_estimated_monthly_cost"`
+	CostByNamespace           []NamespaceCost        `json:"cost_by_namespace"`
+	ResourceEfficiency        ResourceEfficiencyInfo `json:"resource_efficiency"`
+	CostOptimizations         []CostOptimization     `json:"cost_optimizations"`
+	UnderutilizedResources    []UnderutilizedResource `json:"underutilized_resources"`
+	OverprovisionedWorkloads  []OverprovisionedWorkload `json:"overprovisioned_workloads"`
+}
+
+// NamespaceCost represents estimated cost per namespace
+type NamespaceCost struct {
+	Namespace      string  `json:"namespace"`
+	PodCount       int     `json:"pod_count"`
+	CPURequests    string  `json:"cpu_requests"`
+	MemoryRequests string  `json:"memory_requests"`
+	EstimatedCost  float64 `json:"estimated_cost"`
+	CostPercentage float64 `json:"cost_percentage"`
+}
+
+// ResourceEfficiencyInfo contains resource utilization metrics
+type ResourceEfficiencyInfo struct {
+	TotalCPURequests       string  `json:"total_cpu_requests"`
+	TotalCPULimits         string  `json:"total_cpu_limits"`
+	TotalMemoryRequests    string  `json:"total_memory_requests"`
+	TotalMemoryLimits      string  `json:"total_memory_limits"`
+	CPURequestsVsCapacity  float64 `json:"cpu_requests_vs_capacity"`
+	MemoryRequestsVsCapacity float64 `json:"memory_requests_vs_capacity"`
+	PodsWithoutRequests    int     `json:"pods_without_requests"`
+	PodsWithoutLimits      int     `json:"pods_without_limits"`
+}
+
+// CostOptimization represents a cost saving recommendation
+type CostOptimization struct {
+	Category        string  `json:"category"`
+	Description     string  `json:"description"`
+	Impact          string  `json:"impact"`
+	EstimatedSaving float64 `json:"estimated_saving"`
+	Priority        string  `json:"priority"` // high, medium, low
+}
+
+// UnderutilizedResource represents a resource with low utilization
+type UnderutilizedResource struct {
+	Name         string  `json:"name"`
+	Namespace    string  `json:"namespace"`
+	ResourceType string  `json:"resource_type"`
+	CPUUsage     float64 `json:"cpu_usage_percent"`
+	MemoryUsage  float64 `json:"memory_usage_percent"`
+	Suggestion   string  `json:"suggestion"`
+}
+
+// OverprovisionedWorkload represents a workload with excessive resources
+type OverprovisionedWorkload struct {
+	Name           string `json:"name"`
+	Namespace      string `json:"namespace"`
+	WorkloadType   string `json:"workload_type"`
+	CurrentReplicas int   `json:"current_replicas"`
+	SuggestedReplicas int `json:"suggested_replicas"`
+	Reason         string `json:"reason"`
 }
 
 type ClusterInfo struct {
@@ -450,17 +512,289 @@ func (rg *ReportGenerator) GenerateComprehensiveReport(ctx context.Context, user
 		TotalPods:  report.Workloads.TotalPods,
 	}
 
+	// Generate FinOps analysis
+	report.FinOpsAnalysis = rg.generateFinOpsAnalysis(ctx, namespaces, report)
+
 	return report, nil
 }
 
-// GenerateAIAnalysis uses LLM to analyze the cluster state
+// generateFinOpsAnalysis analyzes cost and resource efficiency
+func (rg *ReportGenerator) generateFinOpsAnalysis(ctx context.Context, namespaces []corev1.Namespace, report *ComprehensiveReport) FinOpsAnalysis {
+	analysis := FinOpsAnalysis{
+		CostByNamespace:          []NamespaceCost{},
+		CostOptimizations:        []CostOptimization{},
+		UnderutilizedResources:   []UnderutilizedResource{},
+		OverprovisionedWorkloads: []OverprovisionedWorkload{},
+	}
+
+	// Reference costs (approximate AWS EKS pricing)
+	// vCPU: ~$0.04/hour, Memory: ~$0.004/GB/hour
+	const cpuHourlyCost = 0.04    // per vCPU
+	const memoryHourlyCost = 0.004 // per GB
+
+	var totalCPURequests, totalCPULimits int64   // millicores
+	var totalMemRequests, totalMemLimits int64   // bytes
+	var totalNodeCPUCapacity int64               // millicores
+	var totalNodeMemCapacity int64               // bytes
+	var podsWithoutRequests, podsWithoutLimits int
+
+	// Calculate node capacity
+	nodes, _ := rg.server.k8sClient.ListNodes(ctx)
+	for _, node := range nodes {
+		cpu := node.Status.Capacity.Cpu()
+		mem := node.Status.Capacity.Memory()
+		totalNodeCPUCapacity += cpu.MilliValue()
+		totalNodeMemCapacity += mem.Value()
+	}
+
+	// Analyze each namespace
+	nsCosts := make(map[string]*NamespaceCost)
+
+	for _, ns := range namespaces {
+		pods, _ := rg.server.k8sClient.ListPods(ctx, ns.Name)
+
+		nsCost := &NamespaceCost{
+			Namespace: ns.Name,
+			PodCount:  len(pods),
+		}
+
+		var nsCPU, nsMem int64
+
+		for _, pod := range pods {
+			podHasRequests := false
+			podHasLimits := false
+
+			for _, container := range pod.Spec.Containers {
+				// Requests
+				if cpuReq := container.Resources.Requests.Cpu(); cpuReq != nil {
+					nsCPU += cpuReq.MilliValue()
+					totalCPURequests += cpuReq.MilliValue()
+					podHasRequests = true
+				}
+				if memReq := container.Resources.Requests.Memory(); memReq != nil {
+					nsMem += memReq.Value()
+					totalMemRequests += memReq.Value()
+					podHasRequests = true
+				}
+
+				// Limits
+				if cpuLim := container.Resources.Limits.Cpu(); cpuLim != nil {
+					totalCPULimits += cpuLim.MilliValue()
+					podHasLimits = true
+				}
+				if memLim := container.Resources.Limits.Memory(); memLim != nil {
+					totalMemLimits += memLim.Value()
+					podHasLimits = true
+				}
+			}
+
+			if !podHasRequests {
+				podsWithoutRequests++
+			}
+			if !podHasLimits {
+				podsWithoutLimits++
+			}
+		}
+
+		// Calculate namespace cost (monthly estimate)
+		cpuCores := float64(nsCPU) / 1000.0
+		memGB := float64(nsMem) / (1024 * 1024 * 1024)
+		monthlyHours := 730.0 // average hours per month
+
+		nsCost.CPURequests = fmt.Sprintf("%.2f cores", cpuCores)
+		nsCost.MemoryRequests = fmt.Sprintf("%.2f GB", memGB)
+		nsCost.EstimatedCost = (cpuCores*cpuHourlyCost + memGB*memoryHourlyCost) * monthlyHours
+
+		nsCosts[ns.Name] = nsCost
+	}
+
+	// Calculate total and percentages
+	var totalCost float64
+	for _, nsCost := range nsCosts {
+		totalCost += nsCost.EstimatedCost
+	}
+
+	for _, nsCost := range nsCosts {
+		if totalCost > 0 {
+			nsCost.CostPercentage = (nsCost.EstimatedCost / totalCost) * 100
+		}
+		analysis.CostByNamespace = append(analysis.CostByNamespace, *nsCost)
+	}
+
+	// Sort by cost descending
+	sort.Slice(analysis.CostByNamespace, func(i, j int) bool {
+		return analysis.CostByNamespace[i].EstimatedCost > analysis.CostByNamespace[j].EstimatedCost
+	})
+
+	analysis.TotalEstimatedMonthlyCost = totalCost
+
+	// Resource efficiency
+	analysis.ResourceEfficiency = ResourceEfficiencyInfo{
+		TotalCPURequests:    fmt.Sprintf("%.2f cores", float64(totalCPURequests)/1000.0),
+		TotalCPULimits:      fmt.Sprintf("%.2f cores", float64(totalCPULimits)/1000.0),
+		TotalMemoryRequests: fmt.Sprintf("%.2f GB", float64(totalMemRequests)/(1024*1024*1024)),
+		TotalMemoryLimits:   fmt.Sprintf("%.2f GB", float64(totalMemLimits)/(1024*1024*1024)),
+		PodsWithoutRequests: podsWithoutRequests,
+		PodsWithoutLimits:   podsWithoutLimits,
+	}
+
+	if totalNodeCPUCapacity > 0 {
+		analysis.ResourceEfficiency.CPURequestsVsCapacity = float64(totalCPURequests) / float64(totalNodeCPUCapacity) * 100
+	}
+	if totalNodeMemCapacity > 0 {
+		analysis.ResourceEfficiency.MemoryRequestsVsCapacity = float64(totalMemRequests) / float64(totalNodeMemCapacity) * 100
+	}
+
+	// Generate cost optimization recommendations
+	analysis.CostOptimizations = rg.generateCostOptimizations(report, &analysis)
+
+	// Analyze underutilized deployments
+	for _, dep := range report.Deployments {
+		// Check for deployments with many unavailable replicas
+		parts := strings.Split(dep.Ready, "/")
+		if len(parts) == 2 {
+			ready := 0
+			total := 0
+			fmt.Sscanf(parts[0], "%d", &ready)
+			fmt.Sscanf(parts[1], "%d", &total)
+
+			if total > 1 && ready < total {
+				analysis.OverprovisionedWorkloads = append(analysis.OverprovisionedWorkloads, OverprovisionedWorkload{
+					Name:              dep.Name,
+					Namespace:         dep.Namespace,
+					WorkloadType:      "Deployment",
+					CurrentReplicas:   total,
+					SuggestedReplicas: ready,
+					Reason:           fmt.Sprintf("Only %d/%d replicas are ready - consider reducing replicas or investigating issues", ready, total),
+				})
+			}
+		}
+	}
+
+	return analysis
+}
+
+// generateCostOptimizations creates cost saving recommendations
+func (rg *ReportGenerator) generateCostOptimizations(report *ComprehensiveReport, analysis *FinOpsAnalysis) []CostOptimization {
+	var optimizations []CostOptimization
+
+	// Check for pods without resource requests
+	if analysis.ResourceEfficiency.PodsWithoutRequests > 0 {
+		optimizations = append(optimizations, CostOptimization{
+			Category:        "Resource Management",
+			Description:     fmt.Sprintf("%d pods are running without resource requests defined", analysis.ResourceEfficiency.PodsWithoutRequests),
+			Impact:          "Without resource requests, pods may be scheduled inefficiently leading to resource contention or waste",
+			EstimatedSaving: float64(analysis.ResourceEfficiency.PodsWithoutRequests) * 5.0, // $5 per pod monthly estimate
+			Priority:        "high",
+		})
+	}
+
+	// Check for pods without resource limits
+	if analysis.ResourceEfficiency.PodsWithoutLimits > 0 {
+		optimizations = append(optimizations, CostOptimization{
+			Category:        "Resource Management",
+			Description:     fmt.Sprintf("%d pods are running without resource limits defined", analysis.ResourceEfficiency.PodsWithoutLimits),
+			Impact:          "Without limits, pods can consume unbounded resources affecting cluster stability",
+			EstimatedSaving: float64(analysis.ResourceEfficiency.PodsWithoutLimits) * 3.0,
+			Priority:        "medium",
+		})
+	}
+
+	// Check for low cluster utilization
+	if analysis.ResourceEfficiency.CPURequestsVsCapacity < 30 {
+		optimizations = append(optimizations, CostOptimization{
+			Category:        "Cluster Sizing",
+			Description:     fmt.Sprintf("CPU utilization is only %.1f%% of cluster capacity", analysis.ResourceEfficiency.CPURequestsVsCapacity),
+			Impact:          "Consider reducing node count or using smaller instance types",
+			EstimatedSaving: analysis.TotalEstimatedMonthlyCost * 0.3, // 30% potential savings
+			Priority:        "high",
+		})
+	}
+
+	if analysis.ResourceEfficiency.MemoryRequestsVsCapacity < 30 {
+		optimizations = append(optimizations, CostOptimization{
+			Category:        "Cluster Sizing",
+			Description:     fmt.Sprintf("Memory utilization is only %.1f%% of cluster capacity", analysis.ResourceEfficiency.MemoryRequestsVsCapacity),
+			Impact:          "Consider using memory-optimized instances or reducing node count",
+			EstimatedSaving: analysis.TotalEstimatedMonthlyCost * 0.2,
+			Priority:        "medium",
+		})
+	}
+
+	// Check for failed pods wasting resources
+	if report.Workloads.FailedPods > 0 {
+		optimizations = append(optimizations, CostOptimization{
+			Category:        "Workload Health",
+			Description:     fmt.Sprintf("%d pods are in failed state", report.Workloads.FailedPods),
+			Impact:          "Failed pods may still consume resources and indicate configuration issues",
+			EstimatedSaving: float64(report.Workloads.FailedPods) * 10.0,
+			Priority:        "high",
+		})
+	}
+
+	// Check for pending pods
+	if report.Workloads.PendingPods > 0 {
+		optimizations = append(optimizations, CostOptimization{
+			Category:        "Scheduling",
+			Description:     fmt.Sprintf("%d pods are pending and cannot be scheduled", report.Workloads.PendingPods),
+			Impact:          "Pending pods indicate resource constraints or scheduling issues",
+			EstimatedSaving: 0,
+			Priority:        "high",
+		})
+	}
+
+	// Check for many restarts indicating instability
+	totalRestarts := 0
+	for _, pod := range report.Pods {
+		totalRestarts += pod.Restarts
+	}
+	if totalRestarts > 10 {
+		optimizations = append(optimizations, CostOptimization{
+			Category:        "Stability",
+			Description:     fmt.Sprintf("Total of %d container restarts detected across pods", totalRestarts),
+			Impact:          "Frequent restarts waste compute resources and may indicate memory/OOM issues",
+			EstimatedSaving: float64(totalRestarts) * 0.5,
+			Priority:        "medium",
+		})
+	}
+
+	// LoadBalancer service costs
+	lbCount := 0
+	for _, svc := range report.Services {
+		if svc.Type == "LoadBalancer" {
+			lbCount++
+		}
+	}
+	if lbCount > 3 {
+		optimizations = append(optimizations, CostOptimization{
+			Category:        "Networking",
+			Description:     fmt.Sprintf("%d LoadBalancer services detected", lbCount),
+			Impact:          "Each LoadBalancer incurs cloud provider costs (~$18/month each). Consider using Ingress controller",
+			EstimatedSaving: float64(lbCount-1) * 18.0, // Keep 1, consolidate others
+			Priority:        "medium",
+		})
+	}
+
+	return optimizations
+}
+
+// GenerateAIAnalysis uses LLM to analyze the cluster state with FinOps focus
 func (rg *ReportGenerator) GenerateAIAnalysis(ctx context.Context, report *ComprehensiveReport) (string, error) {
 	if rg.server.aiClient == nil || !rg.server.aiClient.IsReady() {
 		return "", fmt.Errorf("AI client not available")
 	}
 
-	// Build summary for AI
-	prompt := fmt.Sprintf(`You are a Kubernetes expert. Analyze this cluster state and provide a brief professional report (max 500 words).
+	// Build cost optimization summary
+	var costOptSummary strings.Builder
+	for i, opt := range report.FinOpsAnalysis.CostOptimizations {
+		if i >= 5 {
+			break
+		}
+		costOptSummary.WriteString(fmt.Sprintf("- [%s] %s (Est. saving: $%.2f/mo)\n", opt.Priority, opt.Description, opt.EstimatedSaving))
+	}
+
+	// Build summary for AI with FinOps focus
+	prompt := fmt.Sprintf(`You are a Kubernetes and FinOps expert. Analyze this cluster state and provide a comprehensive professional report (max 600 words) with special focus on cost optimization.
 
 Cluster Summary:
 - Nodes: %d total, %d ready, %d not ready
@@ -468,6 +802,16 @@ Cluster Summary:
 - Deployments: %d total, %d healthy
 - Services: %d
 - Health Score: %.1f%%
+
+FinOps / Cost Analysis:
+- Estimated Monthly Cost: $%.2f
+- CPU Utilization vs Capacity: %.1f%%
+- Memory Utilization vs Capacity: %.1f%%
+- Pods without Resource Requests: %d
+- Pods without Resource Limits: %d
+
+Top Cost Optimization Opportunities:
+%s
 
 Security Concerns:
 - Privileged Pods: %d
@@ -481,16 +825,27 @@ Top Images Used:
 
 Please provide:
 1. Overall cluster health assessment
-2. Key issues or concerns (if any)
-3. Recommendations for improvement
+2. **FinOps Cost Analysis** (prioritize this section):
+   - Current spending efficiency
+   - Top cost drivers
+   - Immediate cost reduction opportunities
+   - Long-term optimization recommendations
+3. Resource optimization recommendations
 4. Security observations
+5. Action items with priority levels
 
-Be concise and actionable.`,
+Be concise, actionable, and focus on ROI for each recommendation.`,
 		report.NodeSummary.Total, report.NodeSummary.Ready, report.NodeSummary.NotReady,
 		report.Workloads.TotalPods, report.Workloads.RunningPods, report.Workloads.PendingPods, report.Workloads.FailedPods,
 		report.Workloads.TotalDeployments, report.Workloads.HealthyDeploys,
 		report.Workloads.TotalServices,
 		report.HealthScore,
+		report.FinOpsAnalysis.TotalEstimatedMonthlyCost,
+		report.FinOpsAnalysis.ResourceEfficiency.CPURequestsVsCapacity,
+		report.FinOpsAnalysis.ResourceEfficiency.MemoryRequestsVsCapacity,
+		report.FinOpsAnalysis.ResourceEfficiency.PodsWithoutRequests,
+		report.FinOpsAnalysis.ResourceEfficiency.PodsWithoutLimits,
+		costOptSummary.String(),
 		report.SecurityInfo.PrivilegedPods, report.SecurityInfo.HostNetworkPods, report.SecurityInfo.RootContainers,
 		len(report.Events),
 		formatTopImages(report.Images, 5),
@@ -660,6 +1015,53 @@ func (rg *ReportGenerator) ExportToCSV(report *ComprehensiveReport) ([]byte, err
 	writer.Write([]string{"Root Containers", fmt.Sprintf("%d", report.SecurityInfo.RootContainers)})
 	writer.Write([]string{""})
 
+	// FinOps Analysis
+	writer.Write([]string{"=== FINOPS COST ANALYSIS ==="})
+	writer.Write([]string{"Metric", "Value"})
+	writer.Write([]string{"Estimated Monthly Cost", fmt.Sprintf("$%.2f", report.FinOpsAnalysis.TotalEstimatedMonthlyCost)})
+	writer.Write([]string{"Total CPU Requests", report.FinOpsAnalysis.ResourceEfficiency.TotalCPURequests})
+	writer.Write([]string{"Total CPU Limits", report.FinOpsAnalysis.ResourceEfficiency.TotalCPULimits})
+	writer.Write([]string{"Total Memory Requests", report.FinOpsAnalysis.ResourceEfficiency.TotalMemoryRequests})
+	writer.Write([]string{"Total Memory Limits", report.FinOpsAnalysis.ResourceEfficiency.TotalMemoryLimits})
+	writer.Write([]string{"CPU Utilization vs Capacity", fmt.Sprintf("%.1f%%", report.FinOpsAnalysis.ResourceEfficiency.CPURequestsVsCapacity)})
+	writer.Write([]string{"Memory Utilization vs Capacity", fmt.Sprintf("%.1f%%", report.FinOpsAnalysis.ResourceEfficiency.MemoryRequestsVsCapacity)})
+	writer.Write([]string{"Pods Without Requests", fmt.Sprintf("%d", report.FinOpsAnalysis.ResourceEfficiency.PodsWithoutRequests)})
+	writer.Write([]string{"Pods Without Limits", fmt.Sprintf("%d", report.FinOpsAnalysis.ResourceEfficiency.PodsWithoutLimits)})
+	writer.Write([]string{""})
+
+	// Cost by Namespace
+	if len(report.FinOpsAnalysis.CostByNamespace) > 0 {
+		writer.Write([]string{"=== COST BY NAMESPACE ==="})
+		writer.Write([]string{"Namespace", "Pod Count", "CPU Requests", "Memory Requests", "Est. Cost/Month", "% of Total"})
+		for _, ns := range report.FinOpsAnalysis.CostByNamespace {
+			writer.Write([]string{
+				ns.Namespace,
+				fmt.Sprintf("%d", ns.PodCount),
+				ns.CPURequests,
+				ns.MemoryRequests,
+				fmt.Sprintf("$%.2f", ns.EstimatedCost),
+				fmt.Sprintf("%.1f%%", ns.CostPercentage),
+			})
+		}
+		writer.Write([]string{""})
+	}
+
+	// Cost Optimization Recommendations
+	if len(report.FinOpsAnalysis.CostOptimizations) > 0 {
+		writer.Write([]string{"=== COST OPTIMIZATION RECOMMENDATIONS ==="})
+		writer.Write([]string{"Priority", "Category", "Description", "Impact", "Est. Saving/Month"})
+		for _, opt := range report.FinOpsAnalysis.CostOptimizations {
+			writer.Write([]string{
+				opt.Priority,
+				opt.Category,
+				opt.Description,
+				opt.Impact,
+				fmt.Sprintf("$%.2f", opt.EstimatedSaving),
+			})
+		}
+		writer.Write([]string{""})
+	}
+
 	// Warning Events
 	if len(report.Events) > 0 {
 		writer.Write([]string{"=== WARNING EVENTS ==="})
@@ -723,6 +1125,13 @@ tr:nth-child(even) { background: #f5f5f5; }
 .status-failed { color: #f7768e; font-weight: bold; }
 .ai-analysis { background: #f8f9fa; border-left: 4px solid #7aa2f7; padding: 20px; margin: 20px 0; white-space: pre-wrap; }
 .warning { background: #fff3cd; border-left: 4px solid #e0af68; padding: 10px 15px; margin: 10px 0; }
+.cost-card { display: inline-block; background: #e8f5e9; padding: 15px 25px; margin: 10px; border-radius: 8px; text-align: center; border: 2px solid #4caf50; }
+.cost-value { font-size: 24px; font-weight: bold; color: #2e7d32; }
+.cost-label { font-size: 11px; color: #666; margin-top: 5px; }
+.priority-high { color: #f44336; font-weight: bold; }
+.priority-medium { color: #ff9800; font-weight: bold; }
+.priority-low { color: #4caf50; font-weight: bold; }
+.savings-badge { background: #4caf50; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; }
 .footer { margin-top: 40px; text-align: center; color: #999; font-size: 11px; }
 @media print { body { margin: 20px; } }
 </style>
@@ -842,6 +1251,60 @@ tr:nth-child(even) { background: #f5f5f5; }
 	}
 	sb.WriteString(`</table>`)
 
+	// FinOps Cost Analysis
+	sb.WriteString(`<h2>💰 FinOps Cost Analysis</h2>`)
+	sb.WriteString(`<div style="text-align: center; margin: 20px 0;">`)
+	sb.WriteString(fmt.Sprintf(`<div class="cost-card"><div class="cost-value">$%.2f</div><div class="cost-label">Est. Monthly Cost</div></div>`,
+		report.FinOpsAnalysis.TotalEstimatedMonthlyCost))
+	sb.WriteString(fmt.Sprintf(`<div class="cost-card"><div class="cost-value">%.1f%%</div><div class="cost-label">CPU Utilization</div></div>`,
+		report.FinOpsAnalysis.ResourceEfficiency.CPURequestsVsCapacity))
+	sb.WriteString(fmt.Sprintf(`<div class="cost-card"><div class="cost-value">%.1f%%</div><div class="cost-label">Memory Utilization</div></div>`,
+		report.FinOpsAnalysis.ResourceEfficiency.MemoryRequestsVsCapacity))
+	sb.WriteString(`</div>`)
+
+	// Resource Efficiency
+	sb.WriteString(`<h3>Resource Efficiency</h3>`)
+	sb.WriteString(`<table><tr><th>Metric</th><th>Value</th></tr>`)
+	sb.WriteString(fmt.Sprintf(`<tr><td>Total CPU Requests</td><td>%s</td></tr>`, report.FinOpsAnalysis.ResourceEfficiency.TotalCPURequests))
+	sb.WriteString(fmt.Sprintf(`<tr><td>Total CPU Limits</td><td>%s</td></tr>`, report.FinOpsAnalysis.ResourceEfficiency.TotalCPULimits))
+	sb.WriteString(fmt.Sprintf(`<tr><td>Total Memory Requests</td><td>%s</td></tr>`, report.FinOpsAnalysis.ResourceEfficiency.TotalMemoryRequests))
+	sb.WriteString(fmt.Sprintf(`<tr><td>Total Memory Limits</td><td>%s</td></tr>`, report.FinOpsAnalysis.ResourceEfficiency.TotalMemoryLimits))
+	sb.WriteString(fmt.Sprintf(`<tr><td>Pods Without Requests</td><td>%d</td></tr>`, report.FinOpsAnalysis.ResourceEfficiency.PodsWithoutRequests))
+	sb.WriteString(fmt.Sprintf(`<tr><td>Pods Without Limits</td><td>%d</td></tr>`, report.FinOpsAnalysis.ResourceEfficiency.PodsWithoutLimits))
+	sb.WriteString(`</table>`)
+
+	// Cost by Namespace
+	if len(report.FinOpsAnalysis.CostByNamespace) > 0 {
+		sb.WriteString(`<h3>Cost by Namespace</h3>`)
+		sb.WriteString(`<table><tr><th>Namespace</th><th>Pods</th><th>CPU Requests</th><th>Memory Requests</th><th>Est. Cost/Month</th><th>% of Total</th></tr>`)
+		for i, ns := range report.FinOpsAnalysis.CostByNamespace {
+			if i >= 10 {
+				sb.WriteString(fmt.Sprintf(`<tr><td colspan="6"><em>... and %d more namespaces</em></td></tr>`, len(report.FinOpsAnalysis.CostByNamespace)-10))
+				break
+			}
+			sb.WriteString(fmt.Sprintf(`<tr><td>%s</td><td>%d</td><td>%s</td><td>%s</td><td>$%.2f</td><td>%.1f%%</td></tr>`,
+				ns.Namespace, ns.PodCount, ns.CPURequests, ns.MemoryRequests, ns.EstimatedCost, ns.CostPercentage))
+		}
+		sb.WriteString(`</table>`)
+	}
+
+	// Cost Optimization Recommendations
+	if len(report.FinOpsAnalysis.CostOptimizations) > 0 {
+		totalSavings := 0.0
+		for _, opt := range report.FinOpsAnalysis.CostOptimizations {
+			totalSavings += opt.EstimatedSaving
+		}
+		sb.WriteString(`<h3>Cost Optimization Recommendations</h3>`)
+		sb.WriteString(fmt.Sprintf(`<p><strong>Total Potential Savings:</strong> <span class="savings-badge">$%.2f/month</span></p>`, totalSavings))
+		sb.WriteString(`<table><tr><th>Priority</th><th>Category</th><th>Description</th><th>Impact</th><th>Est. Savings</th></tr>`)
+		for _, opt := range report.FinOpsAnalysis.CostOptimizations {
+			priorityClass := "priority-" + opt.Priority
+			sb.WriteString(fmt.Sprintf(`<tr><td class="%s">%s</td><td>%s</td><td>%s</td><td>%s</td><td>$%.2f</td></tr>`,
+				priorityClass, strings.ToUpper(opt.Priority), opt.Category, opt.Description, opt.Impact, opt.EstimatedSaving))
+		}
+		sb.WriteString(`</table>`)
+	}
+
 	// Security Summary
 	sb.WriteString(`<h2>🔒 Security Summary</h2>`)
 	if report.SecurityInfo.PrivilegedPods > 0 || report.SecurityInfo.HostNetworkPods > 0 || report.SecurityInfo.RootContainers > 0 {
@@ -886,8 +1349,9 @@ func (rg *ReportGenerator) HandleReports(w http.ResponseWriter, r *http.Request)
 		username = "anonymous"
 	}
 
-	format := r.URL.Query().Get("format") // json, csv, html
+	format := r.URL.Query().Get("format")       // json, csv, html
 	includeAI := r.URL.Query().Get("ai") == "true"
+	download := r.URL.Query().Get("download") == "true" // Force download (vs preview)
 
 	switch r.Method {
 	case http.MethodGet:
@@ -911,7 +1375,7 @@ func (rg *ReportGenerator) HandleReports(w http.ResponseWriter, r *http.Request)
 			User:     username,
 			Action:   "generate_report",
 			Resource: "cluster",
-			Details:  fmt.Sprintf("Format: %s, AI: %v", format, includeAI),
+			Details:  fmt.Sprintf("Format: %s, AI: %v, Download: %v", format, includeAI, download),
 		})
 
 		// Return in requested format
@@ -923,13 +1387,17 @@ func (rg *ReportGenerator) HandleReports(w http.ResponseWriter, r *http.Request)
 				return
 			}
 			w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-			w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=k13s-report-%s.csv", time.Now().Format("20060102-150405")))
+			if download {
+				w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=k13s-report-%s.csv", time.Now().Format("20060102-150405")))
+			}
 			w.Write(csvData)
 
 		case "html":
 			htmlData := rg.ExportToHTML(report)
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=k13s-report-%s.html", time.Now().Format("20060102-150405")))
+			if download {
+				w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=k13s-report-%s.html", time.Now().Format("20060102-150405")))
+			}
 			w.Write([]byte(htmlData))
 
 		default: // json
@@ -940,4 +1408,42 @@ func (rg *ReportGenerator) HandleReports(w http.ResponseWriter, r *http.Request)
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// HandleReportPreview handles report preview in a new window
+func (rg *ReportGenerator) HandleReportPreview(w http.ResponseWriter, r *http.Request) {
+	username := r.Header.Get("X-Username")
+	if username == "" {
+		username = "anonymous"
+	}
+
+	includeAI := r.URL.Query().Get("ai") == "true"
+
+	// Generate report
+	report, err := rg.GenerateComprehensiveReport(r.Context(), username)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Add AI analysis if requested
+	if includeAI {
+		analysis, err := rg.GenerateAIAnalysis(r.Context(), report)
+		if err == nil {
+			report.AIAnalysis = analysis
+		}
+	}
+
+	// Record audit
+	db.RecordAudit(db.AuditEntry{
+		User:     username,
+		Action:   "preview_report",
+		Resource: "cluster",
+		Details:  fmt.Sprintf("AI: %v", includeAI),
+	})
+
+	// Return HTML for preview (no Content-Disposition header)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	htmlData := rg.ExportToHTML(report)
+	w.Write([]byte(htmlData))
 }
