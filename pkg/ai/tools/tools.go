@@ -18,6 +18,7 @@ const (
 	ToolTypeBash    ToolType = "bash"
 	ToolTypeRead    ToolType = "read_file"
 	ToolTypeWrite   ToolType = "write_file"
+	ToolTypeMCP     ToolType = "mcp" // MCP server provided tool
 )
 
 // Tool represents an MCP-compatible tool definition
@@ -26,6 +27,7 @@ type Tool struct {
 	Description string                 `json:"description"`
 	InputSchema map[string]interface{} `json:"input_schema"`
 	Type        ToolType               `json:"-"`
+	ServerName  string                 `json:"-"` // For MCP tools: which server provides this
 }
 
 // ToolCall represents a tool invocation request from the LLM
@@ -60,10 +62,16 @@ type BashArgs struct {
 	Timeout int    `json:"timeout,omitempty"` // seconds
 }
 
+// MCPToolExecutor interface for executing MCP tools
+type MCPToolExecutor interface {
+	CallTool(ctx context.Context, toolName string, args map[string]interface{}) (string, error)
+}
+
 // Registry holds all available tools
 type Registry struct {
-	tools    map[string]*Tool
-	executor *Executor
+	tools       map[string]*Tool
+	executor    *Executor
+	mcpExecutor MCPToolExecutor
 }
 
 // NewRegistry creates a new tool registry with default tools
@@ -126,6 +134,47 @@ func (r *Registry) Register(tool *Tool) {
 	r.tools[tool.Name] = tool
 }
 
+// Unregister removes a tool from the registry
+func (r *Registry) Unregister(name string) {
+	delete(r.tools, name)
+}
+
+// SetMCPExecutor sets the MCP tool executor
+func (r *Registry) SetMCPExecutor(executor MCPToolExecutor) {
+	r.mcpExecutor = executor
+}
+
+// RegisterMCPTool registers an MCP-provided tool
+func (r *Registry) RegisterMCPTool(name, description, serverName string, inputSchema map[string]interface{}) {
+	r.tools[name] = &Tool{
+		Name:        name,
+		Description: description,
+		InputSchema: inputSchema,
+		Type:        ToolTypeMCP,
+		ServerName:  serverName,
+	}
+}
+
+// UnregisterMCPTools removes all tools from a specific MCP server
+func (r *Registry) UnregisterMCPTools(serverName string) {
+	for name, tool := range r.tools {
+		if tool.Type == ToolTypeMCP && tool.ServerName == serverName {
+			delete(r.tools, name)
+		}
+	}
+}
+
+// GetMCPTools returns all MCP-provided tools
+func (r *Registry) GetMCPTools() []*Tool {
+	var mcpTools []*Tool
+	for _, tool := range r.tools {
+		if tool.Type == ToolTypeMCP {
+			mcpTools = append(mcpTools, tool)
+		}
+	}
+	return mcpTools
+}
+
 // Get returns a tool by name
 func (r *Registry) Get(name string) (*Tool, bool) {
 	tool, ok := r.tools[name]
@@ -168,7 +217,36 @@ func (r *Registry) Execute(ctx context.Context, call *ToolCall) *ToolResult {
 		}
 	}
 
-	result, err := r.executor.Execute(ctx, tool, call.Function.Arguments)
+	var result string
+	var err error
+
+	// Handle MCP tools specially
+	if tool.Type == ToolTypeMCP {
+		if r.mcpExecutor == nil {
+			return &ToolResult{
+				ToolCallID: call.ID,
+				Content:    "MCP executor not configured",
+				IsError:    true,
+			}
+		}
+
+		// Parse arguments JSON
+		var args map[string]interface{}
+		if call.Function.Arguments != "" {
+			if parseErr := json.Unmarshal([]byte(call.Function.Arguments), &args); parseErr != nil {
+				return &ToolResult{
+					ToolCallID: call.ID,
+					Content:    fmt.Sprintf("Failed to parse arguments: %v", parseErr),
+					IsError:    true,
+				}
+			}
+		}
+
+		result, err = r.mcpExecutor.CallTool(ctx, call.Function.Name, args)
+	} else {
+		result, err = r.executor.Execute(ctx, tool, call.Function.Arguments)
+	}
+
 	if err != nil {
 		return &ToolResult{
 			ToolCallID: call.ID,
@@ -207,6 +285,9 @@ func (e *Executor) Execute(ctx context.Context, tool *Tool, argsJSON string) (st
 		return e.executeKubectl(ctx, argsJSON)
 	case ToolTypeBash:
 		return e.executeBash(ctx, argsJSON)
+	case ToolTypeMCP:
+		// MCP tools are handled separately through the registry's MCPExecutor
+		return "", fmt.Errorf("MCP tools must be executed through Registry.Execute")
 	default:
 		return "", fmt.Errorf("unsupported tool type: %s", tool.Type)
 	}
