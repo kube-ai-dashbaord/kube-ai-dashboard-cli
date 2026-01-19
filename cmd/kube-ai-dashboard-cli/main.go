@@ -23,6 +23,7 @@ var (
 func main() {
 	// Command line flags (k9s compatible)
 	webMode := flag.Bool("web", false, "Start web server mode")
+	tuiMode := flag.Bool("tui", false, "Start TUI mode (default when no mode specified)")
 	webPort := flag.Int("port", 8080, "Web server port (used with -web)")
 	namespace := flag.String("n", "", "Initial namespace (use 'all' for all namespaces)")
 	allNamespaces := flag.Bool("A", false, "Start with all namespaces")
@@ -30,6 +31,9 @@ func main() {
 	genCompletion := flag.String("completion", "", "Generate shell completion (bash, zsh, fish)")
 	flag.StringVar(namespace, "namespace", "", "Initial namespace (use 'all' for all namespaces)")
 	flag.Parse()
+
+	// -tui flag is explicit TUI mode (useful for Docker)
+	_ = tuiMode // TUI is default when -web is not specified
 
 	// Show version
 	if *showVersion {

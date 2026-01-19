@@ -1,5 +1,7 @@
 # Docker Compose override for air-gapped/offline environments
-# Usage: docker-compose -f docker-compose.yaml -f docker-compose.airgapped.yaml up
+# Usage:
+#   Web UI: docker-compose -f docker-compose.yaml -f docker-compose.airgapped.yaml up k13s-web
+#   TUI:    docker-compose -f docker-compose.yaml -f docker-compose.airgapped.yaml run --rm k13s-tui
 #
 # Pre-requisites:
 # 1. Load k13s image: docker load < k13s.tar.gz
@@ -9,10 +11,21 @@
 version: '3.8'
 
 services:
-  k13s:
+  # Web UI mode override for air-gapped
+  k13s-web:
     image: k13s:latest  # Local image
     environment:
       - K13S_AUTH_MODE=token
+      - K13S_LLM_PROVIDER=ollama
+      - K13S_LLM_MODEL=llama3
+      - K13S_LLM_ENDPOINT=http://ollama:11434
+    depends_on:
+      - ollama
+
+  # TUI mode override for air-gapped
+  k13s-tui:
+    image: k13s:latest  # Local image
+    environment:
       - K13S_LLM_PROVIDER=ollama
       - K13S_LLM_MODEL=llama3
       - K13S_LLM_ENDPOINT=http://ollama:11434

@@ -1,12 +1,14 @@
 # Docker Compose for k13s
 # Use cases:
-# 1. Local development: docker-compose up
-# 2. Air-gapped environment: docker-compose -f docker-compose.yaml -f docker-compose.airgapped.yaml up
+# 1. Web UI mode: docker-compose up k13s-web
+# 2. TUI mode: docker-compose run --rm k13s-tui
+# 3. Air-gapped: docker-compose -f docker-compose.yaml -f docker-compose.airgapped.yaml up
 
 version: '3.8'
 
 services:
-  k13s:
+  # Web UI mode (default)
+  k13s-web:
     image: ghcr.io/kube-ai-dashboard/k13s:latest
     # For local build:
     # build:
@@ -28,6 +30,26 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+  # TUI mode (interactive terminal)
+  # Usage: docker-compose run --rm k13s-tui
+  k13s-tui:
+    image: ghcr.io/kube-ai-dashboard/k13s:latest
+    # For local build:
+    # build:
+    #   context: ..
+    #   dockerfile: Dockerfile
+    stdin_open: true    # -i: Keep STDIN open
+    tty: true           # -t: Allocate a pseudo-TTY
+    command: ["-tui"]   # Explicitly run in TUI mode
+    environment:
+      - TERM=xterm-256color
+      - K13S_LLM_PROVIDER=openai
+      - K13S_LLM_MODEL=gpt-4o-mini
+      - K13S_LLM_API_KEY=${OPENAI_API_KEY:-}
+    volumes:
+      - ~/.kube/config:/home/k13s/.kube/config:ro
+      - k13s-data:/home/k13s/.config/k13s
 
 volumes:
   k13s-data:

@@ -38,7 +38,11 @@ RUN CGO_ENABLED=0 go build \
 FROM alpine:3.19
 
 # Install runtime dependencies
-RUN apk add --no-cache ca-certificates tzdata curl
+# - ncurses: Required for TUI mode (terminal UI)
+# - ca-certificates: For HTTPS connections
+# - tzdata: For timezone support
+# - curl: For health checks
+RUN apk add --no-cache ca-certificates tzdata curl ncurses
 
 # Create non-root user
 RUN adduser -D -g '' k13s
@@ -76,6 +80,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -sf http://localhost:${K13S_PORT}/api/health || exit 1
 
 # Default command: run in web mode
-# Override with: docker run k13s ./k13s (for TUI mode with -it)
+# TUI mode: docker run -it --rm -v ~/.kube/config:/home/k13s/.kube/config:ro k13s -tui
+# Web mode: docker run -d -p 8080:8080 -v ~/.kube/config:/home/k13s/.kube/config:ro k13s
 ENTRYPOINT ["/usr/local/bin/k13s"]
 CMD ["-web", "-port", "8080"]
