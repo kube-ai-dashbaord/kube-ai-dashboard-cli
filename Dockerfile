@@ -13,7 +13,7 @@
 # - Set imagePullPolicy: IfNotPresent or Never
 # - Configure LLM endpoint to internal Ollama/vLLM server
 
-FROM golang:1.25-alpine AS builder
+FROM golang:1.25.5-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates tzdata
@@ -35,7 +35,7 @@ RUN CGO_ENABLED=0 go build \
     -o k13s ./cmd/kube-ai-dashboard-cli/main.go
 
 # Final stage
-FROM alpine:3.19
+FROM alpine:3.21
 
 # Install runtime dependencies
 # - ncurses: Required for TUI mode (terminal UI)
