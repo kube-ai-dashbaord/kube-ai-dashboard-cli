@@ -1903,6 +1903,13 @@
             from { transform: translateY(100%); opacity: 0; }
             to { transform: translateY(0); opacity: 1; }
         }
+
+        @keyframes fadeInOut {
+            0% { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+            15% { opacity: 1; transform: translateX(-50%) translateY(0); }
+            85% { opacity: 1; transform: translateX(-50%) translateY(0); }
+            100% { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+        }
     </style>
 </head>
 <body>
@@ -3156,6 +3163,176 @@
             }
         }
 
+        // Resource name mappings for AI command parsing
+        const resourceAliases = {
+            // Korean aliases
+            '파드': 'pods', '팟': 'pods', '포드': 'pods',
+            '디플로이먼트': 'deployments', '배포': 'deployments',
+            '서비스': 'services', '서비스들': 'services',
+            '노드': 'nodes', '노드들': 'nodes',
+            '네임스페이스': 'namespaces', '네임스페이스들': 'namespaces',
+            '컨피그맵': 'configmaps', '설정': 'configmaps',
+            '시크릿': 'secrets', '비밀': 'secrets',
+            '인그레스': 'ingresses',
+            '이벤트': 'events', '이벤트들': 'events',
+            '스테이트풀셋': 'statefulsets',
+            '데몬셋': 'daemonsets',
+            '레플리카셋': 'replicasets',
+            '잡': 'jobs', '작업': 'jobs',
+            '크론잡': 'cronjobs', '스케줄잡': 'cronjobs',
+            '볼륨': 'persistentvolumeclaims', 'pvc': 'persistentvolumeclaims',
+            '롤': 'roles', '역할': 'roles',
+            '서비스계정': 'serviceaccounts',
+            // English aliases
+            'pod': 'pods', 'deployment': 'deployments', 'deploy': 'deployments',
+            'service': 'services', 'svc': 'services',
+            'node': 'nodes', 'namespace': 'namespaces', 'ns': 'namespaces',
+            'configmap': 'configmaps', 'cm': 'configmaps',
+            'secret': 'secrets', 'ingress': 'ingresses', 'ing': 'ingresses',
+            'event': 'events', 'ev': 'events',
+            'statefulset': 'statefulsets', 'sts': 'statefulsets',
+            'daemonset': 'daemonsets', 'ds': 'daemonsets',
+            'replicaset': 'replicasets', 'rs': 'replicasets',
+            'job': 'jobs', 'cronjob': 'cronjobs', 'cj': 'cronjobs',
+            'pv': 'persistentvolumes', 'persistentvolume': 'persistentvolumes',
+            'role': 'roles', 'rolebinding': 'rolebindings', 'rb': 'rolebindings',
+            'clusterrole': 'clusterroles', 'cr': 'clusterroles',
+            'clusterrolebinding': 'clusterrolebindings', 'crb': 'clusterrolebindings',
+            'serviceaccount': 'serviceaccounts', 'sa': 'serviceaccounts',
+            'networkpolicy': 'networkpolicies', 'netpol': 'networkpolicies'
+        };
+
+        // Parse user message and AI response for dashboard commands
+        async function handleAIDashboardCommands(aiResponse, userMessage) {
+            const msg = userMessage.toLowerCase();
+            const resp = aiResponse.toLowerCase();
+
+            // Detect show/list resource commands from user message
+            const showPatterns = [
+                /(?:show|display|list|get|보여|조회|확인|봐|봐줘|보기|리스트).*?(pods?|deployments?|services?|nodes?|namespaces?|configmaps?|secrets?|ingress(?:es)?|events?|statefulsets?|daemonsets?|replicasets?|jobs?|cronjobs?|persistentvolume(?:claim)?s?|roles?|rolebindings?|clusterroles?|clusterrolebindings?|serviceaccounts?|networkpolic(?:y|ies)|파드|팟|포드|디플로이먼트|배포|서비스|노드|네임스페이스|컨피그맵|설정|시크릿|비밀|인그레스|이벤트|스테이트풀셋|데몬셋|레플리카셋|잡|작업|크론잡|스케줄잡|볼륨|pvc|pv|롤|역할|서비스계정|svc|ns|cm|ing|ev|sts|ds|rs|cj|rb|cr|crb|sa|netpol)/i,
+                /(?:pods?|deployments?|services?|nodes?|namespaces?|configmaps?|secrets?|ingress(?:es)?|events?|statefulsets?|daemonsets?|replicasets?|jobs?|cronjobs?|persistentvolume(?:claim)?s?|roles?|rolebindings?|clusterroles?|clusterrolebindings?|serviceaccounts?|networkpolic(?:y|ies)|파드|팟|포드|디플로이먼트|배포|서비스|노드|네임스페이스|컨피그맵|설정|시크릿|비밀|인그레스|이벤트|스테이트풀셋|데몬셋|레플리카셋|잡|작업|크론잡|스케줄잡|볼륨|pvc|pv|롤|역할|서비스계정|svc|ns|cm|ing|ev|sts|ds|rs|cj|rb|cr|crb|sa|netpol).*?(?:show|display|list|보여|조회|확인|봐|봐줘|보기|리스트)/i
+            ];
+
+            let detectedResource = null;
+            let detectedNamespace = null;
+
+            // Check user message for resource commands
+            for (const pattern of showPatterns) {
+                const match = msg.match(pattern);
+                if (match) {
+                    const resourceWord = match[1] || match[0];
+                    detectedResource = resourceAliases[resourceWord.toLowerCase()] || resourceWord.toLowerCase();
+                    // Ensure it's a valid resource
+                    if (allResources.includes(detectedResource)) {
+                        break;
+                    }
+                    detectedResource = null;
+                }
+            }
+
+            // Check for namespace specification
+            const nsPatterns = [
+                /(?:namespace|ns|네임스페이스)[:\s=]+([a-z0-9-]+)/i,
+                /(?:in|from|에서|의)\s+([a-z0-9-]+)\s+(?:namespace|ns|네임스페이스)/i,
+                /-n\s+([a-z0-9-]+)/i
+            ];
+
+            for (const pattern of nsPatterns) {
+                const match = msg.match(pattern);
+                if (match) {
+                    detectedNamespace = match[1];
+                    break;
+                }
+            }
+
+            // Also check AI response for explicit dashboard commands
+            // AI can include special markers like [[SHOW:pods]] or [[NAMESPACE:default]]
+            const aiShowMatch = aiResponse.match(/\[\[SHOW:([a-z]+)\]\]/i);
+            const aiNsMatch = aiResponse.match(/\[\[NAMESPACE:([a-z0-9-]*)\]\]/i);
+
+            if (aiShowMatch) {
+                detectedResource = aiShowMatch[1].toLowerCase();
+            }
+            if (aiNsMatch) {
+                detectedNamespace = aiNsMatch[1] || ''; // empty string means all namespaces
+            }
+
+            // Execute dashboard navigation if resource detected
+            if (detectedResource && allResources.includes(detectedResource)) {
+                // Show notification
+                showDashboardActionNotification(`Switching to ${detectedResource}...`);
+
+                // Switch namespace first if specified
+                if (detectedNamespace !== null) {
+                    const nsSelect = document.getElementById('namespace-select');
+                    if (nsSelect) {
+                        // Check if namespace exists in dropdown
+                        const nsExists = Array.from(nsSelect.options).some(opt => opt.value === detectedNamespace);
+                        if (nsExists || detectedNamespace === '') {
+                            nsSelect.value = detectedNamespace;
+                            currentNamespace = detectedNamespace;
+                        }
+                    }
+                }
+
+                // Switch to the resource view
+                switchResource(detectedResource);
+
+                // Scroll dashboard into view on mobile
+                const dashboardPanel = document.querySelector('.dashboard-panel');
+                if (dashboardPanel && window.innerWidth < 768) {
+                    dashboardPanel.scrollIntoView({ behavior: 'smooth' });
+                }
+            }
+
+            // Check for filter commands
+            const filterPatterns = [
+                /(?:filter|find|search|필터|검색|찾아)[:\s]+["']?([^"'\n]+)["']?/i,
+                /["']([^"']+)["'].*?(?:filter|find|search|필터|검색|찾아)/i
+            ];
+
+            for (const pattern of filterPatterns) {
+                const match = msg.match(pattern);
+                if (match && match[1]) {
+                    const filterText = match[1].trim();
+                    if (filterText && filterText.length > 1) {
+                        const filterInput = document.getElementById('filter-input');
+                        if (filterInput) {
+                            filterInput.value = filterText;
+                            filterTable();
+                            showDashboardActionNotification(`Filtering by "${filterText}"...`);
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+
+        // Show a brief notification for dashboard actions
+        function showDashboardActionNotification(message) {
+            const notification = document.createElement('div');
+            notification.className = 'dashboard-action-notification';
+            notification.textContent = message;
+            notification.style.cssText = `
+                position: fixed;
+                top: 60px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: var(--accent-blue);
+                color: white;
+                padding: 8px 16px;
+                border-radius: 4px;
+                z-index: 10000;
+                font-size: 13px;
+                animation: fadeInOut 2s ease-in-out;
+            `;
+            document.body.appendChild(notification);
+
+            setTimeout(() => {
+                notification.remove();
+            }, 2000);
+        }
+
         // AI Chat
         async function sendMessage() {
             const input = document.getElementById('ai-input');
@@ -3245,6 +3422,9 @@
                 formatted = formatted.replace(/\n/g, '<br>');
                 contentEl.innerHTML = formatted;
 
+                // Parse AI response for dashboard commands
+                await handleAIDashboardCommands(fullContent, message);
+
             } catch (e) {
                 div.classList.remove('streaming');
                 div.id = '';
@@ -3270,6 +3450,8 @@
                     addMessage(`Error: ${data.error}`);
                 } else {
                     addMessage(data.response);
+                    // Parse AI response for dashboard commands
+                    await handleAIDashboardCommands(data.response, message);
                 }
             } catch (e) {
                 removeLoadingMessage();
@@ -3360,6 +3542,9 @@
                 formatted = formatted.replace(/```(\w*)\n?([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
                 formatted = formatted.replace(/\n/g, '<br>');
                 contentEl.innerHTML = formatted;
+
+                // Parse AI response for dashboard commands and execute them
+                await handleAIDashboardCommands(fullContent, message);
 
                 // Refresh resource list after potential changes
                 await loadResources(currentResource, currentNamespace);
