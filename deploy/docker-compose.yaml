@@ -1,0 +1,33 @@
+# Docker Compose for k13s
+# Use cases:
+# 1. Local development: docker-compose up
+# 2. Air-gapped environment: docker-compose -f docker-compose.yaml -f docker-compose.airgapped.yaml up
+
+version: '3.8'
+
+services:
+  k13s:
+    image: ghcr.io/kube-ai-dashboard/k13s:latest
+    # For local build:
+    # build:
+    #   context: ..
+    #   dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - K13S_AUTH_MODE=local
+      - K13S_LLM_PROVIDER=openai
+      - K13S_LLM_MODEL=gpt-4o-mini
+      - K13S_LLM_API_KEY=${OPENAI_API_KEY:-}
+    volumes:
+      - ~/.kube/config:/home/k13s/.kube/config:ro
+      - k13s-data:/home/k13s/.config/k13s
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  k13s-data:

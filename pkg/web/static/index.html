@@ -77,16 +77,34 @@
             font-family: inherit;
         }
 
-        .login-box button {
+        .login-box button.login-btn {
             width: 100%;
             padding: 12px;
             background: var(--accent-blue);
-            color: var(--bg-primary);
+            color: #ffffff;
             border: none;
             border-radius: 6px;
             cursor: pointer;
             font-family: inherit;
             font-weight: bold;
+            transition: all 0.2s;
+        }
+
+        .login-box button.login-btn:hover {
+            background: #5a8af0;
+            color: #ffffff;
+        }
+
+        .login-box button.login-btn:focus {
+            background: #5a8af0;
+            color: #ffffff;
+            box-shadow: 0 0 0 3px rgba(122, 162, 247, 0.3);
+            outline: none;
+        }
+
+        .login-box button.login-btn:active {
+            background: #4a7ae0;
+            color: #ffffff;
         }
 
         .login-error {
@@ -1080,15 +1098,29 @@
             font-family: inherit;
             font-size: 14px;
             transition: all 0.2s;
+            outline: none;
         }
 
         .login-tab.active {
             color: var(--accent-blue);
             border-bottom: 2px solid var(--accent-blue);
+            background: transparent;
         }
 
         .login-tab:hover {
             background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+
+        .login-tab:focus {
+            background: var(--bg-tertiary);
+            color: var(--accent-blue);
+            box-shadow: inset 0 0 0 2px var(--accent-blue);
+        }
+
+        .login-tab.active:focus {
+            background: rgba(122, 162, 247, 0.1);
+            color: var(--accent-blue);
         }
 
         .login-form {
@@ -1892,14 +1924,14 @@
                     <code>kubectl create token default -n default</code>
                 </div>
                 <textarea id="login-token" class="token-input" placeholder="eyJhbGciOiJSUzI1NiIs..."></textarea>
-                <button onclick="loginWithToken()">Login with Token</button>
+                <button class="login-btn" onclick="loginWithToken()">Login with Token</button>
             </div>
 
             <!-- Password Login Form -->
             <div id="password-login-form" class="login-form">
                 <input type="text" id="login-username" placeholder="Username" value="admin">
                 <input type="password" id="login-password" placeholder="Password" value="admin123">
-                <button onclick="login()">Login</button>
+                <button class="login-btn" onclick="login()">Login</button>
             </div>
         </div>
     </div>
@@ -2187,6 +2219,7 @@
                     <div class="tab" onclick="switchSettingsTab('models')">Models</div>
                     <div class="tab" onclick="switchSettingsTab('mcp')">MCP</div>
                     <div class="tab" onclick="switchSettingsTab('llm')">LLM</div>
+                    <div class="tab" id="admin-tab" onclick="switchSettingsTab('admin')" style="display:none;">Admin</div>
                     <div class="tab" onclick="switchSettingsTab('about')">About</div>
                 </div>
 
@@ -2395,6 +2428,55 @@
                     <p><strong>k13s</strong> - AI-Powered Kubernetes Dashboard</p>
                     <p style="margin-top:8px;">Version: 1.0.0</p>
                     <p style="margin-top:8px;">A modern Kubernetes dashboard with AI assistance, combining the power of k9s-style TUI with a web interface.</p>
+                </div>
+
+                <!-- Admin Tab (visible only to admins) -->
+                <div id="settings-admin" class="settings-content" style="display:none;">
+                    <div class="settings-section">
+                        <h4>User Management</h4>
+                        <p class="settings-description" style="margin-bottom:12px;">Manage user accounts and permissions.</p>
+
+                        <div id="admin-users-list" style="margin-bottom:16px;">
+                            <!-- Populated by JavaScript -->
+                        </div>
+
+                        <button class="btn btn-secondary" onclick="showAddUserForm()" style="margin-top:8px;">+ Add User</button>
+                    </div>
+
+                    <div id="add-user-form" class="settings-section" style="display:none;margin-top:16px;background:var(--bg-primary);padding:16px;border-radius:8px;">
+                        <h4>Add New User</h4>
+                        <div class="form-group">
+                            <label>Username</label>
+                            <input type="text" id="new-user-username" placeholder="username">
+                        </div>
+                        <div class="form-group">
+                            <label>Password</label>
+                            <input type="password" id="new-user-password" placeholder="password">
+                        </div>
+                        <div class="form-group">
+                            <label>Email (optional)</label>
+                            <input type="email" id="new-user-email" placeholder="user@example.com">
+                        </div>
+                        <div class="form-group">
+                            <label>Role</label>
+                            <select id="new-user-role">
+                                <option value="viewer">Viewer (read-only)</option>
+                                <option value="user">User (standard)</option>
+                                <option value="admin">Admin (full access)</option>
+                            </select>
+                        </div>
+                        <div style="display:flex;gap:8px;margin-top:12px;">
+                            <button class="btn btn-secondary" onclick="hideAddUserForm()">Cancel</button>
+                            <button class="btn btn-primary" onclick="addUser()">Add User</button>
+                        </div>
+                    </div>
+
+                    <div class="settings-section" style="margin-top:16px;">
+                        <h4>Authentication Status</h4>
+                        <div id="auth-status" style="background:var(--bg-primary);padding:12px;border-radius:8px;">
+                            <!-- Populated by JavaScript -->
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
@@ -3479,6 +3561,11 @@
         function showSettings() {
             document.getElementById('settings-modal').classList.add('active');
             loadSettings();
+            // Show Admin tab only for admin users
+            const adminTab = document.getElementById('admin-tab');
+            if (adminTab) {
+                adminTab.style.display = (currentUser && currentUser.role === 'admin') ? 'block' : 'none';
+            }
         }
 
         function closeSettings() {
@@ -3498,6 +3585,9 @@
             } else if (tab === 'mcp') {
                 loadMCPServers();
                 loadMCPTools();
+            } else if (tab === 'admin') {
+                loadAdminUsers();
+                loadAuthStatus();
             }
         }
 
@@ -3750,6 +3840,164 @@
                 }
             } catch (e) {
                 alert('Failed to add MCP server: ' + e.message);
+            }
+        }
+
+        // Admin User Management Functions
+        async function loadAdminUsers() {
+            try {
+                const resp = await fetchWithAuth('/api/admin/users');
+                if (!resp.ok) {
+                    if (resp.status === 403) {
+                        document.getElementById('admin-users-list').innerHTML = '<p style="color:var(--accent-red);">Access denied. Admin role required.</p>';
+                        return;
+                    }
+                    throw new Error('Failed to load users');
+                }
+                const data = await resp.json();
+                const container = document.getElementById('admin-users-list');
+
+                if (!data.users || data.users.length === 0) {
+                    container.innerHTML = '<p style="color:var(--text-secondary);">No users found.</p>';
+                    return;
+                }
+
+                container.innerHTML = data.users.map(u => `
+                    <div class="settings-row" style="background:var(--bg-primary);padding:12px;border-radius:8px;margin-bottom:8px;">
+                        <div style="flex:1;">
+                            <div style="font-weight:bold;display:flex;align-items:center;gap:8px;">
+                                ${escapeHtml(u.username)}
+                                <span style="background:${u.role === 'admin' ? 'var(--accent-red)' : u.role === 'user' ? 'var(--accent-blue)' : 'var(--bg-tertiary)'};color:${u.role === 'admin' || u.role === 'user' ? '#fff' : 'var(--text-primary)'};padding:2px 8px;border-radius:4px;font-size:10px;text-transform:uppercase;">${u.role}</span>
+                                <span style="background:var(--bg-tertiary);padding:2px 8px;border-radius:4px;font-size:10px;">${u.source || 'local'}</span>
+                            </div>
+                            <div style="font-size:12px;color:var(--text-secondary);margin-top:4px;">
+                                ${u.email ? u.email + ' · ' : ''}Last login: ${u.last_login ? new Date(u.last_login).toLocaleString() : 'Never'}
+                            </div>
+                        </div>
+                        <div style="display:flex;gap:8px;">
+                            ${u.source === 'local' ? `
+                                <button class="btn btn-secondary" onclick="showResetPasswordModal('${escapeHtml(u.username)}')" style="padding:4px 12px;font-size:12px;">Reset Password</button>
+                                <button class="btn btn-secondary" onclick="deleteUser('${escapeHtml(u.username)}')" style="padding:4px 12px;font-size:12px;color:var(--accent-red);">Delete</button>
+                            ` : '<span style="font-size:11px;color:var(--text-secondary);">External user</span>'}
+                        </div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                console.error('Failed to load admin users:', e);
+                document.getElementById('admin-users-list').innerHTML = '<p style="color:var(--accent-red);">Failed to load users.</p>';
+            }
+        }
+
+        async function loadAuthStatus() {
+            try {
+                const resp = await fetchWithAuth('/api/admin/status');
+                if (!resp.ok) return;
+                const data = await resp.json();
+                const container = document.getElementById('auth-status');
+
+                container.innerHTML = `
+                    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;">
+                        <div>Auth Mode: <strong>${data.auth_mode || 'N/A'}</strong></div>
+                        <div>Auth Enabled: <strong>${data.auth_enabled ? 'Yes' : 'No'}</strong></div>
+                        <div>LDAP Enabled: <strong>${data.ldap_enabled ? 'Yes' : 'No'}</strong></div>
+                        <div>Token Auth: <strong>${data.token_available ? 'Available' : 'Not Available'}</strong></div>
+                        <div>Total Users: <strong>${data.total_users || 0}</strong></div>
+                        <div>Active Sessions: <strong>${data.active_sessions || 0}</strong></div>
+                    </div>
+                `;
+            } catch (e) {
+                console.error('Failed to load auth status:', e);
+            }
+        }
+
+        function showAddUserForm() {
+            document.getElementById('add-user-form').style.display = 'block';
+        }
+
+        function hideAddUserForm() {
+            document.getElementById('add-user-form').style.display = 'none';
+            document.getElementById('new-user-username').value = '';
+            document.getElementById('new-user-password').value = '';
+            document.getElementById('new-user-email').value = '';
+            document.getElementById('new-user-role').value = 'viewer';
+        }
+
+        async function addUser() {
+            const user = {
+                username: document.getElementById('new-user-username').value.trim(),
+                password: document.getElementById('new-user-password').value,
+                email: document.getElementById('new-user-email').value.trim(),
+                role: document.getElementById('new-user-role').value
+            };
+
+            if (!user.username || !user.password) {
+                alert('Username and password are required');
+                return;
+            }
+
+            try {
+                const resp = await fetchWithAuth('/api/admin/users', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(user)
+                });
+
+                if (!resp.ok) {
+                    const error = await resp.text();
+                    throw new Error(error);
+                }
+
+                hideAddUserForm();
+                loadAdminUsers();
+                alert('User created successfully');
+            } catch (e) {
+                alert('Failed to create user: ' + e.message);
+            }
+        }
+
+        async function deleteUser(username) {
+            if (!confirm('Delete user "' + username + '"? This action cannot be undone.')) return;
+
+            try {
+                const resp = await fetchWithAuth('/api/admin/users/' + encodeURIComponent(username), {
+                    method: 'DELETE'
+                });
+
+                if (!resp.ok) {
+                    const error = await resp.text();
+                    throw new Error(error);
+                }
+
+                loadAdminUsers();
+                alert('User deleted successfully');
+            } catch (e) {
+                alert('Failed to delete user: ' + e.message);
+            }
+        }
+
+        function showResetPasswordModal(username) {
+            const newPassword = prompt('Enter new password for ' + username + ':');
+            if (!newPassword) return;
+
+            resetUserPassword(username, newPassword);
+        }
+
+        async function resetUserPassword(username, newPassword) {
+            try {
+                const resp = await fetchWithAuth('/api/admin/reset-password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, new_password: newPassword })
+                });
+
+                if (!resp.ok) {
+                    const error = await resp.text();
+                    throw new Error(error);
+                }
+
+                alert('Password reset successfully');
+            } catch (e) {
+                alert('Failed to reset password: ' + e.message);
             }
         }
 

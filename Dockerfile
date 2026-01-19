@@ -1,6 +1,17 @@
 # Multi-architecture build stage
 # For standard build, use: docker build -t k13s .
 # For pre-built binary, use: docker build -f Dockerfile.prebuilt -t k13s .
+#
+# Air-gapped/Offline environment:
+# 1. Build image on a machine with internet access
+# 2. Save: docker save k13s:latest | gzip > k13s.tar.gz
+# 3. Transfer to air-gapped environment
+# 4. Load: docker load < k13s.tar.gz
+#
+# Usage in Kubernetes (air-gapped):
+# - Ensure image is available in local registry
+# - Set imagePullPolicy: IfNotPresent or Never
+# - Configure LLM endpoint to internal Ollama/vLLM server
 
 FROM golang:1.25-alpine AS builder
 
@@ -44,13 +55,18 @@ USER k13s
 WORKDIR /home/k13s
 
 # Environment variables for configuration
-# K13S_AUTH_MODE: local (username/password) or token (k8s token)
-# K13S_USERNAME/K13S_PASSWORD: credentials for local auth mode
+# K13S_AUTH_MODE: token (k8s RBAC - recommended) or local (username/password)
+# K13S_USERNAME/K13S_PASSWORD: credentials for local auth mode (optional)
 # KUBECONFIG: path to kubeconfig file (mount as volume)
+# K13S_LLM_PROVIDER: openai, ollama, gemini, anthropic, bedrock
+# K13S_LLM_ENDPOINT: Custom LLM endpoint (e.g., http://ollama:11434 for air-gapped)
+# K13S_LLM_MODEL: Model name (e.g., gpt-4o-mini, llama3)
+# K13S_LLM_API_KEY: API key for LLM provider
 ENV K13S_PORT=8080 \
-    K13S_AUTH_MODE=local \
-    K13S_USERNAME=admin \
-    K13S_PASSWORD=admin
+    K13S_AUTH_MODE=token \
+    K13S_LLM_PROVIDER=ollama \
+    K13S_LLM_MODEL=llama3 \
+    K13S_LLM_ENDPOINT=""
 
 # Expose web UI port
 EXPOSE 8080

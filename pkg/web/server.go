@@ -228,6 +228,12 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/portforward/list", s.authManager.AuthMiddleware(s.handlePortForwardList))
 	mux.HandleFunc("/api/portforward/", s.authManager.AuthMiddleware(s.handlePortForwardStop))
 
+	// Admin-only endpoints (user management)
+	mux.HandleFunc("/api/admin/users", s.authManager.AuthMiddleware(s.authManager.AdminMiddleware(s.handleAdminUsers)))
+	mux.HandleFunc("/api/admin/users/", s.authManager.AuthMiddleware(s.authManager.AdminMiddleware(s.handleAdminUserAction)))
+	mux.HandleFunc("/api/admin/reset-password", s.authManager.AuthMiddleware(s.authManager.AdminMiddleware(s.authManager.HandleResetPassword)))
+	mux.HandleFunc("/api/admin/status", s.authManager.AuthMiddleware(s.authManager.AdminMiddleware(s.authManager.HandleAuthStatus)))
+
 	// Static files
 	staticFS, err := fs.Sub(staticFiles, "static")
 	if err != nil {
@@ -419,9 +425,7 @@ func (s *Server) handleK8sResource(w http.ResponseWriter, r *http.Request) {
 	resource := parts[0]
 
 	namespace := r.URL.Query().Get("namespace")
-	if namespace == "" {
-		namespace = "default"
-	}
+	// Empty namespace means "all namespaces" - don't default to "default"
 
 	username := r.Header.Get("X-Username")
 	if username == "" {
@@ -1622,4 +1626,28 @@ func (s *Server) handleMCPTools(w http.ResponseWriter, r *http.Request) {
 		"mcp_tools":     tools,
 		"builtin_tools": builtinTools,
 	})
+}
+
+// handleAdminUsers handles listing users and creating new users
+func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.authManager.HandleListUsers(w, r)
+	case http.MethodPost:
+		s.authManager.HandleCreateUser(w, r)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleAdminUserAction handles individual user operations (update/delete)
+func (s *Server) handleAdminUserAction(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPut, http.MethodPatch:
+		s.authManager.HandleUpdateUser(w, r)
+	case http.MethodDelete:
+		s.authManager.HandleDeleteUser(w, r)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
 }

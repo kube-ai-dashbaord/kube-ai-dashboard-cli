@@ -722,3 +722,254 @@ func (am *AuthManager) HandleLDAPTest(w http.ResponseWriter, r *http.Request) {
 		"status": "ok",
 	})
 }
+
+// AdminMiddleware ensures the user has admin role
+func (am *AuthManager) AdminMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		role := r.Header.Get("X-User-Role")
+		if role != "admin" {
+			http.Error(w, "Admin access required", http.StatusForbidden)
+			return
+		}
+		next(w, r)
+	}
+}
+
+// UserRequest represents a user creation/update request
+type UserRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password,omitempty"`
+	Role     string `json:"role"`
+	Email    string `json:"email,omitempty"`
+}
+
+// HandleListUsers returns list of all users (admin only)
+func (am *AuthManager) HandleListUsers(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	users := am.GetUsers()
+
+	// Sanitize user data (remove sensitive fields)
+	safeUsers := make([]map[string]interface{}, len(users))
+	for i, u := range users {
+		safeUsers[i] = map[string]interface{}{
+			"id":           u.ID,
+			"username":     u.Username,
+			"role":         u.Role,
+			"email":        u.Email,
+			"display_name": u.DisplayName,
+			"source":       u.Source,
+			"created_at":   u.CreatedAt,
+			"last_login":   u.LastLogin,
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"users": safeUsers,
+		"total": len(safeUsers),
+	})
+}
+
+// HandleCreateUser creates a new user (admin only)
+func (am *AuthManager) HandleCreateUser(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req UserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Username == "" || req.Password == "" {
+		http.Error(w, "Username and password are required", http.StatusBadRequest)
+		return
+	}
+
+	if req.Role == "" {
+		req.Role = "user"
+	}
+
+	// Validate role
+	if req.Role != "admin" && req.Role != "user" && req.Role != "viewer" {
+		http.Error(w, "Invalid role. Must be admin, user, or viewer", http.StatusBadRequest)
+		return
+	}
+
+	if err := am.CreateUser(req.Username, req.Password, req.Role); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+
+	// Update email if provided
+	if req.Email != "" {
+		am.mu.Lock()
+		if user, exists := am.users[req.Username]; exists {
+			user.Email = req.Email
+		}
+		am.mu.Unlock()
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":   "created",
+		"username": req.Username,
+	})
+}
+
+// HandleUpdateUser updates an existing user (admin only)
+func (am *AuthManager) HandleUpdateUser(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut && r.Method != http.MethodPatch {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Get username from URL path
+	username := strings.TrimPrefix(r.URL.Path, "/api/admin/users/")
+	if username == "" {
+		http.Error(w, "Username is required", http.StatusBadRequest)
+		return
+	}
+
+	var req UserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	am.mu.Lock()
+	defer am.mu.Unlock()
+
+	user, exists := am.users[username]
+	if !exists {
+		http.Error(w, "User not found", http.StatusNotFound)
+		return
+	}
+
+	// Only allow updating local users
+	if user.Source != "local" && user.Source != "" {
+		http.Error(w, "Cannot update non-local user", http.StatusBadRequest)
+		return
+	}
+
+	// Update fields
+	if req.Role != "" {
+		if req.Role != "admin" && req.Role != "user" && req.Role != "viewer" {
+			http.Error(w, "Invalid role", http.StatusBadRequest)
+			return
+		}
+		user.Role = req.Role
+	}
+
+	if req.Email != "" {
+		user.Email = req.Email
+	}
+
+	if req.Password != "" {
+		user.PasswordHash = hashPassword(req.Password)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":   "updated",
+		"username": username,
+	})
+}
+
+// HandleDeleteUser deletes a user (admin only)
+func (am *AuthManager) HandleDeleteUser(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Get username from URL path
+	username := strings.TrimPrefix(r.URL.Path, "/api/admin/users/")
+	if username == "" {
+		http.Error(w, "Username is required", http.StatusBadRequest)
+		return
+	}
+
+	// Prevent deleting the current user
+	currentUser := r.Header.Get("X-Username")
+	if username == currentUser {
+		http.Error(w, "Cannot delete your own account", http.StatusBadRequest)
+		return
+	}
+
+	if err := am.DeleteUser(username); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":   "deleted",
+		"username": username,
+	})
+}
+
+// HandleResetPassword resets a user's password (admin only)
+func (am *AuthManager) HandleResetPassword(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Username    string `json:"username"`
+		NewPassword string `json:"new_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Username == "" || req.NewPassword == "" {
+		http.Error(w, "Username and new password are required", http.StatusBadRequest)
+		return
+	}
+
+	am.mu.Lock()
+	defer am.mu.Unlock()
+
+	user, exists := am.users[req.Username]
+	if !exists {
+		http.Error(w, "User not found", http.StatusNotFound)
+		return
+	}
+
+	if user.Source != "local" && user.Source != "" {
+		http.Error(w, "Cannot reset password for non-local user", http.StatusBadRequest)
+		return
+	}
+
+	user.PasswordHash = hashPassword(req.NewPassword)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":   "password_reset",
+		"username": req.Username,
+	})
+}
+
+// HandleAuthStatus returns authentication system status
+func (am *AuthManager) HandleAuthStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"auth_enabled":    am.config.Enabled,
+		"auth_mode":       am.config.AuthMode,
+		"ldap_enabled":    am.IsLDAPEnabled(),
+		"token_available": am.tokenValidator != nil,
+		"session_duration": am.config.SessionDuration.String(),
+		"total_users":     len(am.users),
+		"active_sessions": len(am.sessions),
+	})
+}
